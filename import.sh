@@ -35,9 +35,49 @@ _sed_i() {
 # ── Helpers ──────────────────────────────────────────────────
 
 # Decode Claude's path encoding: -home-mi-repos-foo → /home/mi/repos/foo
+# Handles ambiguity (e.g., -home-mi-repos-KoSi-backend could be
+# /home/mi/repos/KoSi/backend or /home/mi/repos/KoSi-backend)
+# by greedily validating against the filesystem.
 _decode_claude_path() {
     local encoded="$1"
-    echo "$encoded" | sed 's/^-/\//' | sed 's/-/\//g'
+    # Remove leading dash
+    encoded="${encoded#-}"
+
+    # Split on dashes
+    IFS='-' read -ra parts <<< "$encoded"
+
+    local path="/"
+    local i=0
+    while [[ $i -lt ${#parts[@]} ]]; do
+        local segment="${parts[$i]}"
+        local candidate="$path$segment"
+
+        # Look ahead: try joining subsequent parts with - to find
+        # the longest match that exists on the filesystem
+        local best="$candidate"
+        local best_j=$i
+        local j=$((i + 1))
+        while [[ $j -lt ${#parts[@]} ]]; do
+            candidate="$candidate-${parts[$j]}"
+            if [[ -e "$candidate" ]]; then
+                best="$candidate"
+                best_j=$j
+            fi
+            j=$((j + 1))
+        done
+
+        # If the simple / version exists, prefer it (unless the - version also exists)
+        if [[ -e "$path$segment" && ! -e "$best" ]]; then
+            best="$path$segment"
+            best_j=$i
+        fi
+
+        path="$best/"
+        i=$((best_j + 1))
+    done
+
+    # Remove trailing slash
+    echo "${path%/}"
 }
 
 _project_name_from_path() {
