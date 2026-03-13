@@ -21,12 +21,30 @@
 
 set -euo pipefail
 
+# ── Portable helpers (Linux + macOS) ─────────────────────────
+
+# Portable date string to epoch (GNU: date -d, macOS: date -j -f)
+_date_to_epoch() {
+    local datestr="$1"
+    date -d "$datestr" +%s 2>/dev/null \
+        || date -j -f "%Y-%m-%d" "$datestr" +%s 2>/dev/null \
+        || echo "0"
+}
+
+# Portable relative date (GNU: date -d, macOS: date -v)
+_date_relative() {
+    local offset="$1" fmt="$2"
+    date -d "$offset" +"$fmt" 2>/dev/null \
+        || date -v"$offset" +"$fmt" 2>/dev/null \
+        || echo "unknown"
+}
+
 AGENT_HOME="${CLU_HOME:-$HOME/.clu}"
 CONFIG_FILE="$AGENT_HOME/config.yaml"
 TARGET_PROJECT="${1:-}"
 TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
 TODAY=$(date +%Y-%m-%d)
-YESTERDAY=$(date -d "yesterday" +%Y-%m-%d 2>/dev/null || date -v-1d +%Y-%m-%d 2>/dev/null || echo "unknown")
+YESTERDAY=$(_date_relative "-1d" "%Y-%m-%d")
 
 # ── Logging ───────────────────────────────────────────────────
 
@@ -60,7 +78,7 @@ check_staleness() {
     verified=$(grep "last_verified:" "$file" 2>/dev/null | head -1 | sed 's/.*last_verified:[[:space:]]*//')
     if [[ -n "$verified" ]]; then
         local v_epoch
-        v_epoch=$(date -d "$verified" +%s 2>/dev/null || echo "0")
+        v_epoch=$(_date_to_epoch "$verified")
         local age_days=$(( (today_epoch - v_epoch) / 86400 ))
         if [[ $age_days -ge $STALENESS_DAYS ]]; then
             log "  ⚠ STALE (${age_days}d): $file"
@@ -114,7 +132,8 @@ for project_dir in "${project_dirs[@]}"; do
     # Count daily logs this week
     week_count=0
     for i in $(seq 0 6); do
-        day=$(date -d "$TODAY - $i days" +%Y-%m-%d 2>/dev/null || date -v-${i}d +%Y-%m-%d 2>/dev/null || continue)
+        day=$(_date_relative "-${i}d" "%Y-%m-%d")
+        [[ "$day" == "unknown" ]] && continue
         if [[ -f "$days_dir/$day.md" ]]; then
             week_count=$((week_count + 1))
         fi

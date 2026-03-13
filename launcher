@@ -22,6 +22,25 @@ set -euo pipefail
 AGENT_HOME="${CLU_HOME:-$HOME/.clu}"
 CONFIG_FILE="$AGENT_HOME/config.yaml"
 
+# ── Portable helpers (Linux + macOS) ─────────────────────────
+
+# Portable sed in-place (macOS sed requires '' suffix)
+_sed_i() {
+    if sed --version 2>/dev/null | grep -q GNU; then
+        sed -i "$@"
+    else
+        sed -i '' "$@"
+    fi
+}
+
+# Portable date string to epoch (GNU: date -d, macOS: date -j -f)
+_date_to_epoch() {
+    local datestr="$1"
+    date -d "$datestr" +%s 2>/dev/null \
+        || date -j -f "%Y-%m-%d" "$datestr" +%s 2>/dev/null \
+        || echo "0"
+}
+
 # Minimal YAML parser (covers flat keys and simple nesting)
 # For production use, consider yq. This handles the basics.
 yaml_get() {
@@ -98,7 +117,7 @@ cmd_list() {
 cmd_new() {
     local name="$1"
     if [[ -z "$name" ]]; then
-        echo "Usage: agent new <project-name>"
+        echo "Usage: clu new <project-name>"
         exit 1
     fi
 
@@ -119,8 +138,8 @@ cmd_new() {
 
     # Replace template placeholders
     find "$target" -type f -name "*.yaml" -o -name "*.md" | while read -r f; do
-        sed -i "s/{{PROJECT_NAME}}/$name/g" "$f"
-        sed -i "s/{{DATE}}/$today/g" "$f"
+        _sed_i "s/{{PROJECT_NAME}}/$name/g" "$f"
+        _sed_i "s/{{DATE}}/$today/g" "$f"
     done
 
     echo "✅ Created at $target"
@@ -128,7 +147,7 @@ cmd_new() {
     echo "Next steps:"
     echo "  1. Edit $target/project.yaml (set repo_path, type, description)"
     echo "  2. Edit $target/constraints.md (add project-specific rules)"
-    echo "  3. Run: agent $name"
+    echo "  3. Run: clu $name"
     echo ""
 }
 
@@ -152,7 +171,7 @@ cmd_check() {
         verified=$(grep "last_verified:" "$mf" 2>/dev/null | head -1 | sed 's/.*last_verified:[[:space:]]*//')
         if [[ -n "$verified" ]]; then
             local v_epoch
-            v_epoch=$(date -d "$verified" +%s 2>/dev/null || echo "0")
+            v_epoch=$(_date_to_epoch "$verified")
             local age_days=$(( (today_epoch - v_epoch) / 86400 ))
             local status="✅"
             if [[ $age_days -ge $STALENESS_DAYS ]]; then
@@ -200,7 +219,7 @@ pick_project() {
     done
 
     if [[ ${#projects[@]} -eq 0 ]]; then
-        echo "No projects found. Create one with: agent new <name>"
+        echo "No projects found. Create one with: clu new <name>"
         exit 1
     fi
 

@@ -40,20 +40,34 @@ fi
 
 echo "📦 Installing to $INSTALL_DIR ..."
 
+_copy_framework_files() {
+    local src="$1" dst="$2"
+    cp "$src/launcher" "$dst/launcher"
+    cp "$src/bootstrap.sh" "$dst/bootstrap.sh"
+    cp "$src/heartbeat.sh" "$dst/heartbeat.sh"
+    cp "$src/create-persona.sh" "$dst/create-persona.sh"
+    cp -r "$src/adapters/" "$dst/adapters/"
+    cp -r "$src/personas/" "$dst/personas/"
+    cp -r "$src/templates/" "$dst/templates/"
+    cp -r "$src/docs/" "$dst/docs/"
+    cp "$src/.gitignore" "$dst/.gitignore"
+    mkdir -p "$dst/shared"
+    cp "$src/shared/core-prompt.md" "$dst/shared/core-prompt.md"
+    cp "$src/shared/constraints.md" "$dst/shared/constraints.md"
+}
+
 if [[ "$UPGRADE" == "true" ]]; then
-    # Preserve projects/ and shared/memory/ on upgrade
-    cp -r "$SCRIPT_DIR/config.yaml" "$INSTALL_DIR/config.yaml"
-    cp -r "$SCRIPT_DIR/launcher" "$INSTALL_DIR/launcher"
-    cp -r "$SCRIPT_DIR/bootstrap.sh" "$INSTALL_DIR/bootstrap.sh"
-    cp -r "$SCRIPT_DIR/heartbeat.sh" "$INSTALL_DIR/heartbeat.sh"
-    cp -r "$SCRIPT_DIR/adapters/" "$INSTALL_DIR/adapters/"
-    cp -r "$SCRIPT_DIR/personas/" "$INSTALL_DIR/personas/"
-    cp -r "$SCRIPT_DIR/templates/" "$INSTALL_DIR/templates/"
-    cp -r "$SCRIPT_DIR/shared/core-prompt.md" "$INSTALL_DIR/shared/core-prompt.md"
-    cp -r "$SCRIPT_DIR/shared/constraints.md" "$INSTALL_DIR/shared/constraints.md"
-    # Don't overwrite shared/memory/* or projects/*
+    # Preserve projects/, shared/memory/, shared/agent/, and config.yaml on upgrade
+    echo "  ℹ Preserving config.yaml, projects/, shared/memory/, shared/agent/"
+    _copy_framework_files "$SCRIPT_DIR" "$INSTALL_DIR"
 else
-    cp -r "$SCRIPT_DIR" "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
+    _copy_framework_files "$SCRIPT_DIR" "$INSTALL_DIR"
+    # Only copy config.yaml and memory scaffolds on fresh install
+    cp "$SCRIPT_DIR/config.yaml" "$INSTALL_DIR/config.yaml"
+    cp -r "$SCRIPT_DIR/shared/memory/" "$INSTALL_DIR/shared/memory/"
+    cp -r "$SCRIPT_DIR/shared/agent/" "$INSTALL_DIR/shared/agent/"
+    cp -r "$SCRIPT_DIR/projects/" "$INSTALL_DIR/projects/"
 fi
 
 chmod +x "$INSTALL_DIR/launcher" "$INSTALL_DIR/bootstrap.sh" "$INSTALL_DIR/heartbeat.sh"
