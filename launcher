@@ -9,6 +9,7 @@
 #   clu list               → list all projects
 #   clu summarize <project> → run post-session summarizer
 #   clu check <project>    → check memory staleness
+#   clu import             → import Claude Code session history
 #   clu bootstrap          → agent-guided onboarding interview
 #   clu heartbeat          → run maintenance heartbeat (or via cron)
 #   clu --adapter <name> <project>  → override adapter
@@ -79,7 +80,7 @@ while [[ $# -gt 0 ]]; do
             PERSONA_OVERRIDE="$2"
             shift 2
             ;;
-        new|list|summarize|check|bootstrap|heartbeat)
+        new|list|summarize|check|bootstrap|heartbeat|import)
             COMMAND="$1"
             shift
             PROJECT="${1:-}"
@@ -394,6 +395,10 @@ main() {
             ;;
         heartbeat)
             bash "$AGENT_HOME/heartbeat.sh" "${PROJECT:-}"
+            exit 0
+            ;;
+        import)
+            bash "$AGENT_HOME/import.sh" "${PROJECT:-}"
             exit 0
             ;;
     esac

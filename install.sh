@@ -46,6 +46,7 @@ _copy_framework_files() {
     cp "$src/bootstrap.sh" "$dst/bootstrap.sh"
     cp "$src/heartbeat.sh" "$dst/heartbeat.sh"
     cp "$src/create-persona.sh" "$dst/create-persona.sh"
+    cp "$src/import.sh" "$dst/import.sh"
     cp -r "$src/adapters/" "$dst/adapters/"
     cp -r "$src/personas/" "$dst/personas/"
     cp -r "$src/templates/" "$dst/templates/"
@@ -70,7 +71,7 @@ else
     cp -r "$SCRIPT_DIR/projects/" "$INSTALL_DIR/projects/"
 fi
 
-chmod +x "$INSTALL_DIR/launcher" "$INSTALL_DIR/bootstrap.sh" "$INSTALL_DIR/heartbeat.sh"
+chmod +x "$INSTALL_DIR/launcher" "$INSTALL_DIR/bootstrap.sh" "$INSTALL_DIR/heartbeat.sh" "$INSTALL_DIR/import.sh"
 
 # ── Create the `clu` symlink/alias ─────────────────────────
 

@@ -109,7 +109,7 @@ case "$ADAPTER" in
             cp "$HOME/CLAUDE.md" "$BACKUP"
         fi
         cp "$STAGING_DIR/bootstrap-prompt.md" "$HOME/CLAUDE.md"
-        (cd "$HOME" && claude)
+        (cd "$HOME" && claude --dangerously-skip-permissions)
         # Restore
         if [[ -n "$BACKUP" && -f "$BACKUP" ]]; then
             mv "$BACKUP" "$HOME/CLAUDE.md"

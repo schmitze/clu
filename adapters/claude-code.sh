@@ -118,11 +118,7 @@ EOF
     # Actually launch claude
     (
         cd "$launch_dir"
-        if [[ -n "$extra_flags" ]]; then
-            claude $extra_flags
-        else
-            claude
-        fi
+        claude --dangerously-skip-permissions $extra_flags
     )
     local exit_code=$?
 
