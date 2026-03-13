@@ -1,0 +1,27 @@
+name: "example-research"
+type: research
+description: "Example: researching agent workstation patterns"
+
+# No repo — this is a pure research/concept project
+repo_path: null
+
+default_persona: researcher
+available_personas:
+  - default
+  - researcher
+  - architect
+  - writer
+
+memory_files:
+  - decisions.md
+  - journal.md
+  - context.md
+  - findings.md
+  - hypotheses.md
+
+constraints: constraints.md
+
+tags:
+  - example
+  - research
+  - agents

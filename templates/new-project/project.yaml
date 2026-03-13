@@ -1,0 +1,72 @@
+# ============================================================
+# Project Configuration
+# ============================================================
+# Created by: clu new <project-name>
+# ============================================================
+
+# Human-readable project name.
+name: "{{PROJECT_NAME}}"
+
+# What kind of work this is. Helps the agent adapt its approach.
+# Options: software | research | writing | strategy | mixed
+type: mixed
+
+# Short description (shown in project picker).
+description: ""
+
+# Path to the working directory / repository.
+# Use ~ for home. Leave null if no repo (e.g., pure research).
+repo_path: null
+
+# ── Personas ──────────────────────────────────────────────────
+
+# Default persona to use when the session starts.
+default_persona: default
+
+# Which personas are available for this project.
+# The router can only switch to personas listed here.
+available_personas:
+  - default
+  - architect
+  - implementer
+  - reviewer
+  - researcher
+  - writer
+
+# ── Per-project trait overrides ───────────────────────────────
+
+# Override specific traits for ANY persona when used in this project.
+# Useful when a project needs a different "flavor" without creating
+# a whole new persona file. These shift the base persona scores.
+#
+# Example: make the reviewer less harsh for a collaborative project:
+#   trait_overrides:
+#     reviewer:
+#       agreeableness: +2
+#     implementer:
+#       neuroticism: +1
+#       conscientiousness: +1
+trait_overrides: {}
+
+# ── Memory files ──────────────────────────────────────────────
+
+# Which memory files this project uses. Remove any that don't
+# apply to keep context lean.
+memory_files:
+  - decisions.md
+  - architecture.md
+  - journal.md
+  - context.md
+  # Uncomment for research-heavy projects:
+  # - findings.md
+  # - hypotheses.md
+
+# ── Project-specific constraints ──────────────────────────────
+
+# Path to a constraints file (relative to project dir).
+# Set to null to use only global constraints.
+constraints: constraints.md
+
+# ── Tags (for search/filtering) ──────────────────────────────
+
+tags: []

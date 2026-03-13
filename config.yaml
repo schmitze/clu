@@ -1,0 +1,60 @@
+# ============================================================
+# clu – Global Configuration
+# ============================================================
+# This file controls launcher behavior, default adapter,
+# and global settings that apply across all projects.
+# ============================================================
+
+# Which agent framework adapter to use by default.
+# Available: claude-code | aider | cursor | custom
+default_adapter: claude-code
+
+# Default project to open when you run `clu` with no arguments.
+# Set to null to always show the project picker.
+default_project: null
+
+# Interactive picker tool (used when default_project is null).
+# Options: fzf | gum | basic (built-in bash select)
+picker: basic
+
+# ── Session behavior ──────────────────────────────────────────
+
+# Automatically run the summarizer pass at end of session?
+auto_summarize: true
+
+# If true, proposed memory writes need explicit user confirmation.
+# If false, writes happen automatically (not recommended).
+confirm_memory_writes: true
+
+# Staleness threshold in days – memory files older than this
+# get flagged at session start.
+memory_staleness_days: 30
+
+# ── Persona system ────────────────────────────────────────────
+
+# Enable dynamic persona routing (agent switches roles automatically).
+# If false, uses the project's default persona only.
+dynamic_personas: true
+
+# ── Paths (override only if you move things around) ───────────
+
+paths:
+  personas: personas/
+  shared: shared/
+  projects: projects/
+  templates: templates/
+  adapters: adapters/
+
+# ── Adapter-specific overrides ────────────────────────────────
+
+adapters:
+  claude-code:
+    # Extra CLI flags passed to claude every time.
+    extra_flags: ""
+    # Where to write the assembled CLAUDE.md (temp location).
+    staging_dir: /tmp/clu
+  aider:
+    model: claude-sonnet-4-20250514
+    extra_flags: ""
+  cursor:
+    rules_file: .cursorrules

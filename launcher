@@ -1,0 +1,423 @@
+#!/usr/bin/env bash
+# ============================================================
+# clu Launcher
+# ============================================================
+# Usage:
+#   clu                    → interactive project picker
+#   clu <project>          → launch specific project
+#   clu new <name>         → create new project
+#   clu list               → list all projects
+#   clu summarize <project> → run post-session summarizer
+#   clu check <project>    → check memory staleness
+#   clu bootstrap          → agent-guided onboarding interview
+#   clu heartbeat          → run maintenance heartbeat (or via cron)
+#   clu --adapter <name> <project>  → override adapter
+#   clu --persona <name> <project>  → override persona
+# ============================================================
+
+set -euo pipefail
+
+# ── Resolve paths ─────────────────────────────────────────────
+
+AGENT_HOME="${CLU_HOME:-$HOME/.clu}"
+CONFIG_FILE="$AGENT_HOME/config.yaml"
+
+# Minimal YAML parser (covers flat keys and simple nesting)
+# For production use, consider yq. This handles the basics.
+yaml_get() {
+    local file="$1" key="$2"
+    grep -E "^${key}:" "$file" 2>/dev/null | head -1 | sed "s/^${key}:[[:space:]]*//" | sed 's/^"//' | sed 's/"$//'
+}
+
+# ── Load config ───────────────────────────────────────────────
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "❌ Config not found at $CONFIG_FILE"
+    echo "   Run the install script first, or set CLU_HOME."
+    exit 1
+fi
+
+DEFAULT_ADAPTER=$(yaml_get "$CONFIG_FILE" "default_adapter")
+DEFAULT_PROJECT=$(yaml_get "$CONFIG_FILE" "default_project")
+PICKER=$(yaml_get "$CONFIG_FILE" "picker")
+STALENESS_DAYS=$(yaml_get "$CONFIG_FILE" "memory_staleness_days")
+DYNAMIC_PERSONAS=$(yaml_get "$CONFIG_FILE" "dynamic_personas")
+
+# ── Argument parsing ──────────────────────────────────────────
+
+ADAPTER="$DEFAULT_ADAPTER"
+PERSONA_OVERRIDE=""
+COMMAND=""
+PROJECT=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --adapter)
+            ADAPTER="$2"
+            shift 2
+            ;;
+        --persona)
+            PERSONA_OVERRIDE="$2"
+            shift 2
+            ;;
+        new|list|summarize|check|bootstrap|heartbeat)
+            COMMAND="$1"
+            shift
+            PROJECT="${1:-}"
+            shift || true
+            ;;
+        -h|--help)
+            head -15 "$0" | grep "^#" | sed 's/^# *//'
+            exit 0
+            ;;
+        *)
+            PROJECT="$1"
+            shift
+            ;;
+    esac
+done
+
+# ── Commands ──────────────────────────────────────────────────
+
+cmd_list() {
+    echo "📂 Available projects:"
+    echo ""
+    for dir in "$AGENT_HOME"/projects/*/; do
+        [[ -d "$dir" ]] || continue
+        local name
+        name=$(basename "$dir")
+        local desc
+        desc=$(yaml_get "$dir/project.yaml" "description" 2>/dev/null || echo "")
+        local ptype
+        ptype=$(yaml_get "$dir/project.yaml" "type" 2>/dev/null || echo "mixed")
+        printf "  %-20s [%s]  %s\n" "$name" "$ptype" "$desc"
+    done
+    echo ""
+}
+
+cmd_new() {
+    local name="$1"
+    if [[ -z "$name" ]]; then
+        echo "Usage: agent new <project-name>"
+        exit 1
+    fi
+
+    local target="$AGENT_HOME/projects/$name"
+    if [[ -d "$target" ]]; then
+        echo "❌ Project '$name' already exists at $target"
+        exit 1
+    fi
+
+    local today
+    today=$(date +%Y-%m-%d)
+
+    echo "🆕 Creating project: $name"
+    cp -r "$AGENT_HOME/templates/new-project" "$target"
+
+    # Create daily log directory
+    mkdir -p "$target/memory/days"
+
+    # Replace template placeholders
+    find "$target" -type f -name "*.yaml" -o -name "*.md" | while read -r f; do
+        sed -i "s/{{PROJECT_NAME}}/$name/g" "$f"
+        sed -i "s/{{DATE}}/$today/g" "$f"
+    done
+
+    echo "✅ Created at $target"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Edit $target/project.yaml (set repo_path, type, description)"
+    echo "  2. Edit $target/constraints.md (add project-specific rules)"
+    echo "  3. Run: agent $name"
+    echo ""
+}
+
+cmd_check() {
+    local name="$1"
+    local project_dir="$AGENT_HOME/projects/$name"
+    if [[ ! -d "$project_dir" ]]; then
+        echo "❌ Project '$name' not found."
+        exit 1
+    fi
+
+    echo "🔍 Memory staleness check for: $name (threshold: ${STALENESS_DAYS}d)"
+    echo ""
+
+    local today_epoch
+    today_epoch=$(date +%s)
+
+    for mf in "$project_dir"/memory/*.md "$AGENT_HOME"/shared/memory/*.md "$AGENT_HOME"/shared/agent/*.md; do
+        [[ -f "$mf" ]] || continue
+        local verified
+        verified=$(grep "last_verified:" "$mf" 2>/dev/null | head -1 | sed 's/.*last_verified:[[:space:]]*//')
+        if [[ -n "$verified" ]]; then
+            local v_epoch
+            v_epoch=$(date -d "$verified" +%s 2>/dev/null || echo "0")
+            local age_days=$(( (today_epoch - v_epoch) / 86400 ))
+            local status="✅"
+            if [[ $age_days -ge $STALENESS_DAYS ]]; then
+                status="⚠️  STALE ($age_days days)"
+            fi
+            printf "  %-40s %s  (verified: %s)\n" "$(basename "$mf")" "$status" "$verified"
+        else
+            printf "  %-40s ❓  no last_verified header\n" "$(basename "$mf")"
+        fi
+    done
+    echo ""
+}
+
+cmd_summarize() {
+    local name="$1"
+    local project_dir="$AGENT_HOME/projects/$name"
+    if [[ ! -d "$project_dir" ]]; then
+        echo "❌ Project '$name' not found."
+        exit 1
+    fi
+
+    echo "📝 Post-session summarizer for: $name"
+    echo "   This will ask the adapter to generate a session summary"
+    echo "   and propose appending it to journal.md."
+    echo ""
+
+    # Delegate to adapter's summarize function
+    local adapter_script="$AGENT_HOME/adapters/${ADAPTER}.sh"
+    if [[ -f "$adapter_script" ]]; then
+        source "$adapter_script"
+        adapter_summarize "$project_dir" "$AGENT_HOME"
+    else
+        echo "❌ Adapter '$ADAPTER' not found at $adapter_script"
+        exit 1
+    fi
+}
+
+# ── Project picker ────────────────────────────────────────────
+
+pick_project() {
+    local projects=()
+    for dir in "$AGENT_HOME"/projects/*/; do
+        [[ -d "$dir" ]] || continue
+        projects+=("$(basename "$dir")")
+    done
+
+    if [[ ${#projects[@]} -eq 0 ]]; then
+        echo "No projects found. Create one with: agent new <name>"
+        exit 1
+    fi
+
+    if [[ "$PICKER" == "fzf" ]] && command -v fzf &>/dev/null; then
+        printf '%s\n' "${projects[@]}" | fzf --header="Select project:"
+    elif [[ "$PICKER" == "gum" ]] && command -v gum &>/dev/null; then
+        gum choose --header="Select project:" "${projects[@]}"
+    else
+        echo "Select a project:"
+        select p in "${projects[@]}"; do
+            if [[ -n "$p" ]]; then
+                echo "$p"
+                return
+            fi
+        done
+    fi
+}
+
+# ── Context assembly ──────────────────────────────────────────
+
+assemble_context() {
+    local project_dir="$1"
+    local project_name
+    project_name=$(basename "$project_dir")
+
+    # Read project config
+    local project_type
+    project_type=$(yaml_get "$project_dir/project.yaml" "type")
+    local repo_path
+    repo_path=$(yaml_get "$project_dir/project.yaml" "repo_path")
+    local default_persona_name
+    default_persona_name=$(yaml_get "$project_dir/project.yaml" "default_persona")
+
+    # Determine active persona
+    local persona_name="${PERSONA_OVERRIDE:-$default_persona_name}"
+    persona_name="${persona_name:-default}"
+
+    # ── Build the system prompt ───────────────────────────────
+
+    local prompt=""
+    local core_prompt
+    core_prompt=$(cat "$AGENT_HOME/shared/core-prompt.md")
+
+    # Persona block
+    local persona_block=""
+    local persona_file="$AGENT_HOME/personas/${persona_name}.md"
+    if [[ -f "$persona_file" ]]; then
+        persona_block=$(cat "$persona_file")
+    else
+        echo "⚠ Persona '$persona_name' not found, falling back to default."
+        persona_block=$(cat "$AGENT_HOME/personas/default.md")
+    fi
+
+    # Router block
+    local router_block=""
+    if [[ "$DYNAMIC_PERSONAS" == "true" ]]; then
+        router_block=$(cat "$AGENT_HOME/personas/_router.md")
+    fi
+
+    # Global constraints
+    local global_constraints=""
+    if [[ -f "$AGENT_HOME/shared/constraints.md" ]]; then
+        global_constraints=$(cat "$AGENT_HOME/shared/constraints.md")
+    fi
+
+    # Project constraints
+    local project_constraints=""
+    if [[ -f "$project_dir/constraints.md" ]]; then
+        project_constraints=$(cat "$project_dir/constraints.md")
+    fi
+
+    # ── Tiered memory loading (L0 abstract / L1 overview) ─────
+    # L1 = front-matter + content up to ~50 lines or first major
+    # section break. Full L2 is loaded on-demand by the agent.
+
+    _load_memory_l1() {
+        local dir="$1"
+        local output=""
+        for mf in "$dir"/*.md; do
+            [[ -f "$mf" ]] || continue
+            local basename
+            basename=$(basename "$mf")
+            output+="### $basename"$'\n'
+            output+="**Path:** \`$mf\`"$'\n'
+            # Extract L0 abstract from front-matter
+            local abstract
+            abstract=$(grep "^abstract:" "$mf" 2>/dev/null | head -1 | sed 's/^abstract:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//')
+            if [[ -n "$abstract" ]]; then
+                output+="**Abstract (L0):** $abstract"$'\n'
+            fi
+            # L1: load first 50 lines (or until second --- after front-matter)
+            output+=$(head -50 "$mf")
+            output+=$'\n\n'
+        done
+        echo "$output"
+    }
+
+    # User memory (shared/memory/)
+    local shared_memory=""
+    shared_memory=$(_load_memory_l1 "$AGENT_HOME/shared/memory")
+
+    # Agent memory (shared/agent/)
+    local agent_memory=""
+    if [[ -d "$AGENT_HOME/shared/agent" ]]; then
+        agent_memory=$(_load_memory_l1 "$AGENT_HOME/shared/agent")
+    fi
+
+    # Project memory
+    local project_memory=""
+    project_memory=$(_load_memory_l1 "$project_dir/memory")
+
+    # Resolve repo path
+    local resolved_repo="${repo_path/\~/$HOME}"
+    resolved_repo="${resolved_repo:-[no repo - this is a non-code project]}"
+
+    # Trait reference (Big Five behavior mapping)
+    local trait_reference=""
+    if [[ -f "$AGENT_HOME/personas/_traits.md" ]]; then
+        trait_reference=$(cat "$AGENT_HOME/personas/_traits.md")
+    fi
+
+    # ── Substitute variables in core prompt ───────────────────
+
+    prompt="$core_prompt"
+    prompt="${prompt//\{\{PERSONA_BLOCK\}\}/$persona_block}"
+    prompt="${prompt//\{\{ROUTER_BLOCK\}\}/$router_block}"
+    prompt="${prompt//\{\{TRAIT_REFERENCE\}\}/$trait_reference}"
+    prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
+    prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/$project_constraints}"
+    prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
+    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
+    prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$project_memory}"
+    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
+    prompt="${prompt//\{\{REPO_PATH\}\}/$resolved_repo}"
+
+    # Export for adapter use
+    export AGENT_PROMPT="$prompt"
+    export AGENT_PROJECT_NAME="$project_name"
+    export AGENT_PROJECT_DIR="$project_dir"
+    export AGENT_PROJECT_TYPE="$project_type"
+    export AGENT_REPO_PATH="$resolved_repo"
+    export AGENT_PERSONA="$persona_name"
+    export AGENT_HOME="$AGENT_HOME"
+}
+
+# ── Main ──────────────────────────────────────────────────────
+
+main() {
+    # Handle subcommands
+    case "${COMMAND:-}" in
+        list)
+            cmd_list
+            exit 0
+            ;;
+        new)
+            cmd_new "$PROJECT"
+            exit 0
+            ;;
+        check)
+            cmd_check "$PROJECT"
+            exit 0
+            ;;
+        summarize)
+            cmd_summarize "$PROJECT"
+            exit 0
+            ;;
+        bootstrap)
+            local force_flag=""
+            [[ "$PROJECT" == "--force" ]] && force_flag="--force"
+            bash "$AGENT_HOME/bootstrap.sh" $force_flag
+            exit 0
+            ;;
+        heartbeat)
+            bash "$AGENT_HOME/heartbeat.sh" "${PROJECT:-}"
+            exit 0
+            ;;
+    esac
+
+    # Resolve project
+    if [[ -z "$PROJECT" ]]; then
+        if [[ -n "$DEFAULT_PROJECT" && "$DEFAULT_PROJECT" != "null" ]]; then
+            PROJECT="$DEFAULT_PROJECT"
+        else
+            PROJECT=$(pick_project)
+        fi
+    fi
+
+    local project_dir="$AGENT_HOME/projects/$PROJECT"
+    if [[ ! -d "$project_dir" ]]; then
+        echo "❌ Project '$PROJECT' not found."
+        echo "   Available:"
+        cmd_list
+        exit 1
+    fi
+
+    # Assemble context
+    echo "🚀 Loading project: $PROJECT"
+    assemble_context "$project_dir"
+    echo "   Persona: $AGENT_PERSONA"
+    echo "   Type: $AGENT_PROJECT_TYPE"
+    echo "   Adapter: $ADAPTER"
+    echo ""
+
+    # Run staleness check (quick, non-blocking)
+    cmd_check "$PROJECT" 2>/dev/null || true
+
+    # Dispatch to adapter
+    local adapter_script="$AGENT_HOME/adapters/${ADAPTER}.sh"
+    if [[ ! -f "$adapter_script" ]]; then
+        echo "❌ Adapter '$ADAPTER' not found at $adapter_script"
+        echo "   Available adapters:"
+        ls "$AGENT_HOME/adapters/"
+        exit 1
+    fi
+
+    source "$adapter_script"
+    adapter_launch
+}
+
+main

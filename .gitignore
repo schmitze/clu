@@ -1,0 +1,13 @@
+# Temporary files
+/tmp/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Sensitive data — uncomment if your memory files contain secrets
+# projects/*/memory/
+# shared/memory/
+
+# Adapter staging directories
+/staging/
