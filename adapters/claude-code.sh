@@ -72,12 +72,14 @@ EOF
 
     # ── Determine launch directory ────────────────────────────
 
-    local launch_dir="$HOME"
+    # Use AGENT_REPO_PATH (set by launcher), fall back to $HOME
+    local launch_dir="${AGENT_REPO_PATH:-$HOME}"
     if [[ -n "$AGENT_REPO_PATH" && "$AGENT_REPO_PATH" != *"no repo"* ]]; then
         if [[ -d "$AGENT_REPO_PATH" ]]; then
             launch_dir="$AGENT_REPO_PATH"
         else
-            echo "⚠ Repo path '$AGENT_REPO_PATH' not found. Launching from home."
+            echo "⚠ Repo path '$AGENT_REPO_PATH' not found. Launching from $HOME."
+            launch_dir="$HOME"
         fi
     fi
 

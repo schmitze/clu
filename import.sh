@@ -133,13 +133,13 @@ _import_global_settings() {
 
         # Extract plugins
         local plugins
-        plugins=$(python3 -c "
-import json, sys
-with open('$CLAUDE_HOME/settings.json') as f:
+        plugins=$(CLU_SETTINGS="$CLAUDE_HOME/settings.json" python3 -c '
+import json, os
+with open(os.environ["CLU_SETTINGS"]) as f:
     d = json.load(f)
-for k, v in d.get('enabledPlugins', {}).items():
-    if v: print(f'  - {k}')
-" 2>/dev/null || echo "  (could not parse)")
+for k, v in d.get("enabledPlugins", {}).items():
+    if v: print(f"  - {k}")
+' 2>/dev/null || echo "  (could not parse)")
         if [[ -n "$plugins" ]]; then
             echo "  Enabled plugins:"
             echo "$plugins"
@@ -147,13 +147,13 @@ for k, v in d.get('enabledPlugins', {}).items():
 
         # Extract MCP servers
         local mcp
-        mcp=$(python3 -c "
-import json, sys
-with open('$CLAUDE_HOME/settings.json') as f:
+        mcp=$(CLU_SETTINGS="$CLAUDE_HOME/settings.json" python3 -c '
+import json, os
+with open(os.environ["CLU_SETTINGS"]) as f:
     d = json.load(f)
-for k in d.get('mcpServers', {}):
-    print(f'  - {k}')
-" 2>/dev/null || echo "")
+for k in d.get("mcpServers", {}):
+    print(f"  - {k}")
+' 2>/dev/null || echo "")
         if [[ -n "$mcp" ]]; then
             echo "  MCP servers:"
             echo "$mcp"
@@ -161,13 +161,91 @@ for k in d.get('mcpServers', {}):
 
         # Extract model + mode
         local model mode
-        model=$(python3 -c "import json; print(json.load(open('$CLAUDE_HOME/settings.json')).get('model','?'))" 2>/dev/null || echo "?")
-        mode=$(python3 -c "import json; print(json.load(open('$CLAUDE_HOME/settings.json')).get('defaultMode','?'))" 2>/dev/null || echo "?")
+        model=$(CLU_SETTINGS="$CLAUDE_HOME/settings.json" python3 -c 'import json,os; print(json.load(open(os.environ["CLU_SETTINGS"])).get("model","?"))' 2>/dev/null || echo "?")
+        mode=$(CLU_SETTINGS="$CLAUDE_HOME/settings.json" python3 -c 'import json,os; print(json.load(open(os.environ["CLU_SETTINGS"])).get("defaultMode","?"))' 2>/dev/null || echo "?")
         echo "  Model: $model | Mode: $mode"
 
         if [[ "$MODE" != "--list" ]]; then
             cp "$CLAUDE_HOME/settings.json" "$IMPORTED_DIR/claude-global-settings.json"
             echo "  → Copied to $IMPORTED_DIR/claude-global-settings.json"
+
+            # ── Write plugins to config.yaml ───────────────────
+            local plugin_list
+            plugin_list=$(CLU_SETTINGS="$CLAUDE_HOME/settings.json" python3 -c '
+import json, os
+with open(os.environ["CLU_SETTINGS"]) as f:
+    d = json.load(f)
+for k, v in d.get("enabledPlugins", {}).items():
+    if v: print(k)
+' 2>/dev/null || true)
+
+            if [[ -n "$plugin_list" ]]; then
+                # Build YAML array
+                local yaml_plugins="plugins:"
+                while IFS= read -r p; do
+                    yaml_plugins="$yaml_plugins
+  - $p"
+                done <<< "$plugin_list"
+
+                # Replace plugins section in config.yaml
+                # Matches both `plugins: []` and block-list format
+                CLU_CFG="$AGENT_HOME/config.yaml" CLU_PLUGINS="$yaml_plugins" python3 -c '
+import re, os
+config_path = os.environ["CLU_CFG"]
+new_plugins = os.environ["CLU_PLUGINS"]
+config = open(config_path).read()
+if not config.endswith("\n"):
+    config += "\n"
+new_config, count = re.subn(
+    r"^plugins:\s*\[.*?\]|^plugins:\s*\n(?:  - .*\n)*(?:  - .*)?$",
+    new_plugins + "\n",
+    config,
+    flags=re.MULTILINE
+)
+if count == 0:
+    new_config = config + "\n" + new_plugins + "\n"
+open(config_path, "w").write(new_config)
+' && echo "  → Plugins saved to config.yaml" || echo "  ⚠ Could not update config.yaml plugins"
+            fi
+
+            # ── Write MCP servers to config.yaml ──────────────
+            local mcp_yaml
+            mcp_yaml=$(CLU_SETTINGS="$CLAUDE_HOME/settings.json" python3 -c '
+import json, os
+with open(os.environ["CLU_SETTINGS"]) as f:
+    d = json.load(f)
+servers = d.get("mcpServers", {})
+if not servers:
+    exit(0)
+print("mcp_servers:")
+for name, cfg in servers.items():
+    print(f"  - name: {name}")
+    print(f"    command: {cfg.get(\"command\", \"\")}")
+    args = cfg.get("args", [])
+    if args:
+        args_str = ", ".join(f"\"{a}\"" for a in args)
+        print(f"    args: [{args_str}]")
+' 2>/dev/null || true)
+
+            if [[ -n "$mcp_yaml" ]]; then
+                CLU_CFG="$AGENT_HOME/config.yaml" CLU_MCP="$mcp_yaml" python3 -c '
+import re, os
+config_path = os.environ["CLU_CFG"]
+new_mcp = os.environ["CLU_MCP"]
+config = open(config_path).read()
+if not config.endswith("\n"):
+    config += "\n"
+new_config, count = re.subn(
+    r"^mcp_servers:\s*\[.*?\]$|^mcp_servers:\s*\n(?:  - .*\n(?:    .*\n)*)*(?:  - .*)?$",
+    new_mcp + "\n",
+    config,
+    flags=re.MULTILINE
+)
+if count == 0:
+    new_config = config + "\n" + new_mcp + "\n"
+open(config_path, "w").write(new_config)
+' && echo "  → MCP servers saved to config.yaml" || echo "  ⚠ Could not update config.yaml MCP servers"
+            fi
         fi
     else
         echo "  No global settings found."
@@ -505,4 +583,5 @@ echo "Next steps:"
 echo "  1. Review imported projects: clu list"
 echo "  2. Launch a project: clu <name>"
 echo "  3. Tell the agent: 'Read imported memory and summarize key decisions'"
+echo "  4. Run 'clu bootstrap' to configure your profile, personality & install plugins"
 echo ""

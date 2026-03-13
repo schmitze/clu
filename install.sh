@@ -47,6 +47,7 @@ _copy_framework_files() {
     cp "$src/heartbeat.sh" "$dst/heartbeat.sh"
     cp "$src/create-persona.sh" "$dst/create-persona.sh"
     cp "$src/import.sh" "$dst/import.sh"
+    cp "$src/dashboard.py" "$dst/dashboard.py"
     cp -r "$src/adapters/" "$dst/adapters/"
     cp -r "$src/personas/" "$dst/personas/"
     cp -r "$src/templates/" "$dst/templates/"

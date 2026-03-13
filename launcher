@@ -59,7 +59,6 @@ fi
 
 DEFAULT_ADAPTER=$(yaml_get "$CONFIG_FILE" "default_adapter")
 DEFAULT_PROJECT=$(yaml_get "$CONFIG_FILE" "default_project")
-PICKER=$(yaml_get "$CONFIG_FILE" "picker")
 STALENESS_DAYS=$(yaml_get "$CONFIG_FILE" "memory_staleness_days")
 DYNAMIC_PERSONAS=$(yaml_get "$CONFIG_FILE" "dynamic_personas")
 
@@ -80,7 +79,7 @@ while [[ $# -gt 0 ]]; do
             PERSONA_OVERRIDE="$2"
             shift 2
             ;;
-        new|list|summarize|check|bootstrap|heartbeat|import)
+        new|list|summarize|check|bootstrap|heartbeat|import|dashboard)
             COMMAND="$1"
             shift
             PROJECT="${1:-}"
@@ -330,7 +329,14 @@ assemble_workspace_context() {
     export AGENT_PROJECT_NAME="_workspace"
     export AGENT_PROJECT_DIR="$AGENT_HOME/projects"
     export AGENT_PROJECT_TYPE="workspace"
-    export AGENT_REPO_PATH="$HOME"
+    # Use default_workdir if set, otherwise $HOME
+    local default_workdir
+    default_workdir=$(grep "^default_workdir:" "$AGENT_HOME/config.yaml" 2>/dev/null \
+        | head -1 | sed 's/.*default_workdir:[[:space:]]*//')
+    default_workdir="${default_workdir:-$HOME}"
+    [[ "$default_workdir" == "null" || -z "$default_workdir" ]] && default_workdir="$HOME"
+    default_workdir="${default_workdir/#\~/$HOME}"
+    export AGENT_REPO_PATH="$default_workdir"
     export AGENT_PERSONA="$persona_name"
     export AGENT_HOME="$AGENT_HOME"
 }
@@ -482,7 +488,7 @@ main() {
         bootstrap)
             local force_flag=""
             [[ "$PROJECT" == "--force" ]] && force_flag="--force"
-            bash "$AGENT_HOME/bootstrap.sh" $force_flag
+            bash "$AGENT_HOME/bootstrap.sh" ${force_flag:+"$force_flag"}
             exit 0
             ;;
         heartbeat)
@@ -491,6 +497,10 @@ main() {
             ;;
         import)
             bash "$AGENT_HOME/import.sh" "${PROJECT:-}"
+            exit 0
+            ;;
+        dashboard)
+            python3 "$AGENT_HOME/dashboard.py" "${PROJECT:-3141}"
             exit 0
             ;;
     esac
