@@ -31,8 +31,6 @@
 
 ### Optional but recommended
 
-- **fzf** (`brew install fzf` / `apt install fzf`) — fuzzy project picker
-- **gum** (`brew install gum`) — prettier interactive prompts
 - **git** — for backup and version control of the config directory
 
 ### Compatibility
@@ -68,13 +66,14 @@ chmod +x install.sh
 
 ### What the installer does
 
-1. Copies all files to `~/.clu/` (configurable via `$CLU_HOME`)
+1. Copies all files to `~/.clu/` (configurable via `$CLU_HOME`), excluding `.git/` on fresh installs
 2. Sets executable permissions on `launcher` and helper scripts
 3. Adds two lines to your shell RC file (`~/.zshrc`, `~/.bashrc`, or `~/.config/fish/config.fish`):
    - `export CLU_HOME='~/.clu'`
    - `alias clu='~/.clu/launcher'`
 4. Checks for optional dependencies and reports their status
 5. Does NOT touch any existing projects if upgrading
+6. Preserves user's `config.yaml` on upgrade
 
 ### Post-install verification
 
@@ -181,7 +180,7 @@ The launcher will:
 # Launch a specific project
 clu my-project
 
-# Interactive project picker (if no default set)
+# Workspace mode — agent sees all projects, can switch between them
 clu
 
 # Override the persona for this session
@@ -242,10 +241,12 @@ After the agent exits, the launcher may prompt for a quick manual summary if aut
 
 | Command | What it does |
 |---|---|
-| `clu` | Interactive project picker, then launch |
+| `clu` | Workspace mode — agent sees all projects, can switch between them and create new ones |
 | `clu <project>` | Launch a specific project |
 | `clu new <name>` | Create a new project from template |
 | `clu list` | List all projects with type and description |
+| `clu import` | Import Claude Code session history, global settings (plugins, MCP servers), plans, project memory, and local `.claude/settings.local.json` from repos. Writes to `~/.clu/shared/imported/` and per-project dirs |
+| `clu import --list` | Preview what would be imported (read-only) |
 | `clu bootstrap` | Agent-guided onboarding interview |
 | `clu bootstrap --force` | Re-run onboarding even if already done |
 | `clu heartbeat` | Run all maintenance tasks |
@@ -765,8 +766,8 @@ cd /path/to/new-clu
 ```
 
 The installer in upgrade mode:
-- Overwrites: `config.yaml`, `launcher`, `adapters/`, `personas/`, `templates/`, `shared/core-prompt.md`, `shared/constraints.md`
-- Preserves: `projects/`, `shared/memory/`, `shared/agent/`
+- Overwrites: `launcher`, `adapters/`, `personas/`, `templates/`, `shared/core-prompt.md`, `shared/constraints.md`
+- Preserves: `config.yaml`, `projects/`, `shared/memory/`, `shared/agent/`, `shared/imported/`
 
 If you have customized personas or constraints, back them up first or maintain your own branch.
 

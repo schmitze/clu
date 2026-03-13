@@ -152,6 +152,10 @@ The system has three clean boundaries:
 ├── shared/                          # Cross-project resources
 │   ├── core-prompt.md               # System prompt template with {{variables}}
 │   ├── constraints.md               # Global rules
+│   ├── imported/                    # Global Claude Code imports (via `clu import`)
+│   │   ├── settings.json            # Merged global settings (plugins, MCP servers)
+│   │   ├── plans/                   # Imported session plans
+│   │   └── ...                      # Session history, etc.
 │   ├── memory/                      # USER scope
 │   │   ├── preferences.md           # Full user profile (identity + prefs)
 │   │   ├── patterns.md
@@ -257,11 +261,11 @@ Input: $PROJECT (possibly empty)
 Output: resolved project directory path
 ```
 
-If `$PROJECT` is set, validates it exists in `projects/`. If empty, checks `default_project` in config, or falls back to the interactive picker (fzf, gum, or bash select).
+If `$PROJECT` is set, validates it exists in `projects/`. If empty, enters workspace mode: the function `assemble_workspace_context()` builds a multi-project context so the agent sees all projects and can switch between them, create new ones, and work across projects. The interactive picker (fzf/gum/basic select) has been removed.
 
 ### Phase 3: Context assembly
 
-This is the core logic. The function `assemble_context()` does the following in order:
+This is the core logic. For a specific project, `assemble_context()` does the following in order. For workspace mode (no project specified), `assemble_workspace_context()` builds a multi-project view instead.
 
 1. **Read project config** — parses `project.yaml` for type, repo path, default persona, available personas
 2. **Load core prompt template** — reads `shared/core-prompt.md`
@@ -352,7 +356,7 @@ $AGENT_HOME            # Path to clu root
 
 | Adapter | Prompt delivery | Memory access | Launch mechanism |
 |---|---|---|---|
-| Claude Code | Writes `CLAUDE.md` to repo dir | File paths in prompt → agent reads directly | `cd $REPO_PATH && claude` |
+| Claude Code | Writes `CLAUDE.md` to repo dir | File paths in prompt → agent reads directly | `cd $REPO_PATH && claude --dangerously-skip-permissions` |
 | Aider | `--system-prompt-file` flag | `--read` flag per memory file | `cd $REPO_PATH && aider` |
 | Cursor | Writes `.cursorrules` with inlined memory | Memory snapshot at launch (no live access) | Opens Cursor or prepares file |
 | Custom | User-defined | User-defined | User-defined |
@@ -432,7 +436,7 @@ These adjustments persist for the remainder of the session only.
 
 ### Tiered loading mechanism
 
-The launcher implements L1 loading via the `_load_memory_l1()` function, which:
+The launcher implements L1 loading via the standalone `_load_memory_l1()` function, which:
 
 1. Iterates over all `.md` files in a given directory
 2. For each file, extracts the `abstract:` field from front-matter (L0)
@@ -569,7 +573,7 @@ T4: Done
 
 | File | Format | Editable | Purpose |
 |---|---|---|---|
-| `config.yaml` | YAML | Manual | Global settings: adapter, picker, staleness, persona switching |
+| `config.yaml` | YAML | Manual | Global settings: adapter, staleness, persona switching |
 | `project.yaml` | YAML | Manual + `clu new` | Per-project: name, type, repo path, personas, trait overrides |
 
 ### Prompt assembly files
@@ -601,12 +605,12 @@ T4: Done
 
 | File | Executable | Purpose |
 |---|---|---|
-| `launcher` | Yes | Main entry point — the `clu` command |
-| `install.sh` | Yes | Deploys to `~/.clu`, sets up shell alias |
+| `launcher` | Yes | Main entry point — the `clu` command. Includes `_load_memory_l1()`, `assemble_workspace_context()`, `_decode_claude_path()`, and portable helpers (`_sed_i()`, `_date_to_epoch()`, `_date_relative()`) |
+| `install.sh` | Yes | Deploys to `~/.clu`, sets up shell alias. Excludes `.git/` on fresh install, preserves user `config.yaml` on upgrade |
 | `create-persona.sh` | Yes | Interactive Big Five persona creation wizard |
-| `bootstrap.sh` | Yes | Agent-guided onboarding interview (first-run) |
-| `heartbeat.sh` | Yes | Cron-triggered maintenance between sessions |
-| `adapters/*.sh` | Sourced | Adapter implementations |
+| `bootstrap.sh` | Yes | Agent-guided onboarding interview (first-run). Runs Claude with `--dangerously-skip-permissions`. Includes portable macOS helpers |
+| `heartbeat.sh` | Yes | Cron-triggered maintenance between sessions. Includes portable macOS helpers (`_sed_i()`, `_date_to_epoch()`, `_date_relative()`) |
+| `adapters/*.sh` | Sourced | Adapter implementations. Claude Code adapter runs with `--dangerously-skip-permissions` |
 
 ---
 

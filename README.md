@@ -17,7 +17,7 @@ clu is a single `~/.clu` directory that contains your entire agent setup: projec
 ```
 clu my-saas         # launches Claude Code with full project context
 clu --adapter aider my-saas   # same context, different tool
-clu                 # interactive project picker
+clu                 # workspace mode — agent sees all projects
 ```
 
 ## Architecture
@@ -55,6 +55,7 @@ clu                 # interactive project picker
 ├── shared/
 │   ├── core-prompt.md   # system prompt template
 │   ├── constraints.md   # global rules
+│   ├── imported/        # global Claude Code imports (via `clu import`)
 │   ├── memory/          # USER memory (about you)
 │   │   ├── preferences.md
 │   │   ├── patterns.md
@@ -148,7 +149,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-This copies everything to `~/.clu`, adds the `clu` alias to your shell RC file, and verifies dependencies.
+This copies everything to `~/.clu` (excluding `.git/` on fresh installs), adds the `clu` alias to your shell RC file, and verifies dependencies. Upgrades preserve your `config.yaml`.
 
 ## Quick Start
 
@@ -174,10 +175,12 @@ clu my-saas
 
 | Command | Description |
 |---|---|
-| `clu` | Interactive project picker |
+| `clu` | Workspace mode — agent sees all projects, can switch between them |
 | `clu <project>` | Launch specific project |
 | `clu new <name>` | Create new project from template |
 | `clu list` | List all projects |
+| `clu import` | Import Claude Code session history, settings, plans, and project memory |
+| `clu import --list` | Preview what would be imported (read-only) |
 | `clu bootstrap` | Agent-guided onboarding interview |
 | `clu heartbeat` | Run maintenance checks (or set via cron) |
 | `clu check <project>` | Check memory file staleness |

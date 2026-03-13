@@ -3,7 +3,7 @@
 # clu Launcher
 # ============================================================
 # Usage:
-#   clu                    → interactive project picker
+#   clu                    → workspace mode (all projects, switch freely)
 #   clu <project>          → launch specific project
 #   clu new <name>         → create new project
 #   clu list               → list all projects
@@ -210,36 +210,154 @@ cmd_summarize() {
     fi
 }
 
-# ── Project picker ────────────────────────────────────────────
+# ── Workspace context (multi-project mode) ───────────────────
 
-pick_project() {
-    local projects=()
+assemble_workspace_context() {
+    local persona_name="${PERSONA_OVERRIDE:-default}"
+
+    local core_prompt
+    core_prompt=$(cat "$AGENT_HOME/shared/core-prompt.md")
+
+    # Persona block
+    local persona_block=""
+    local persona_file="$AGENT_HOME/personas/${persona_name}.md"
+    if [[ -f "$persona_file" ]]; then
+        persona_block=$(cat "$persona_file")
+    else
+        persona_block=$(cat "$AGENT_HOME/personas/default.md")
+    fi
+
+    # Router
+    local router_block=""
+    if [[ "$DYNAMIC_PERSONAS" == "true" ]]; then
+        router_block=$(cat "$AGENT_HOME/personas/_router.md")
+    fi
+
+    # Global constraints
+    local global_constraints=""
+    [[ -f "$AGENT_HOME/shared/constraints.md" ]] && global_constraints=$(cat "$AGENT_HOME/shared/constraints.md")
+
+    # Trait reference
+    local trait_reference=""
+    [[ -f "$AGENT_HOME/personas/_traits.md" ]] && trait_reference=$(cat "$AGENT_HOME/personas/_traits.md")
+
+    # Shared memory (user + agent)
+    local shared_memory=""
+    shared_memory=$(_load_memory_l1 "$AGENT_HOME/shared/memory")
+    local agent_memory=""
+    [[ -d "$AGENT_HOME/shared/agent" ]] && agent_memory=$(_load_memory_l1 "$AGENT_HOME/shared/agent")
+
+    # ── Build project index ───────────────────────────────────
+    local project_index=""
+    project_index+="## Available Projects"$'\n\n'
+    project_index+="You can work on any of these projects. Switch by reading the"$'\n'
+    project_index+="project's memory files. Announce switches with:"$'\n'
+    project_index+="\`[→ Project: <name> (<type>)]\`"$'\n\n'
+
     for dir in "$AGENT_HOME"/projects/*/; do
         [[ -d "$dir" ]] || continue
-        projects+=("$(basename "$dir")")
+        local pname
+        pname=$(basename "$dir")
+        local ptype
+        ptype=$(yaml_get "$dir/project.yaml" "type" 2>/dev/null || echo "mixed")
+        local pdesc
+        pdesc=$(yaml_get "$dir/project.yaml" "description" 2>/dev/null || echo "")
+        local prepo
+        prepo=$(yaml_get "$dir/project.yaml" "repo_path" 2>/dev/null || echo "null")
+        local ppersona
+        ppersona=$(yaml_get "$dir/project.yaml" "default_persona" 2>/dev/null || echo "default")
+
+        project_index+="### $pname"$'\n'
+        project_index+="- **Type:** $ptype"$'\n'
+        [[ -n "$pdesc" ]] && project_index+="- **Description:** $pdesc"$'\n'
+        [[ "$prepo" != "null" && -n "$prepo" ]] && project_index+="- **Repo:** \`$prepo\`"$'\n'
+        project_index+="- **Default persona:** $ppersona"$'\n'
+        project_index+="- **Project dir:** \`$dir\`"$'\n'
+        project_index+="- **Memory files:**"$'\n'
+
+        for mf in "$dir"/memory/*.md; do
+            [[ -f "$mf" ]] || continue
+            local abstract
+            abstract=$(grep "^abstract:" "$mf" 2>/dev/null | head -1 | sed 's/^abstract:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//')
+            project_index+="  - \`$mf\`"
+            [[ -n "$abstract" ]] && project_index+=" — $abstract"
+            project_index+=$'\n'
+        done
+        [[ -f "$dir/constraints.md" ]] && project_index+="- **Constraints:** \`$dir/constraints.md\`"$'\n'
+        project_index+=$'\n'
     done
 
-    if [[ ${#projects[@]} -eq 0 ]]; then
-        echo "No projects found. Create one with: clu new <name>"
-        exit 1
-    fi
+    # ── Build workspace instructions ──────────────────────────
+    local workspace_block=""
+    workspace_block+="## Workspace Mode — Multi-Project Navigation"$'\n\n'
+    workspace_block+="You are in **workspace mode**. The user has not selected a specific"$'\n'
+    workspace_block+="project. You have an overview of all projects and can:"$'\n\n'
+    workspace_block+="1. **Switch projects** — when the user says \"let's work on X\" or"$'\n'
+    workspace_block+="   starts discussing a specific project, read its memory files and"$'\n'
+    workspace_block+="   constraints. Announce: \`[→ Project: X (type)]\`"$'\n'
+    workspace_block+="   Switch to the project's default persona if dynamic_personas is enabled."$'\n\n'
+    workspace_block+="2. **Create new projects** — when the user wants to start something new:"$'\n'
+    workspace_block+="   - Ask for: project name, type (software/research/writing/strategy/mixed),"$'\n'
+    workspace_block+="     description, and repo path (if applicable)"$'\n'
+    workspace_block+="   - Copy the template: \`cp -r $AGENT_HOME/templates/new-project $AGENT_HOME/projects/<name>\`"$'\n'
+    workspace_block+="   - Create daily log dir: \`mkdir -p $AGENT_HOME/projects/<name>/memory/days\`"$'\n'
+    workspace_block+="   - Fill in \`project.yaml\` with name, type, description, repo_path"$'\n'
+    workspace_block+="   - Replace \`{{PROJECT_NAME}}\` and \`{{DATE}}\` in all template files"$'\n'
+    workspace_block+="   - Announce: \`[✨ Created project: <name> (<type>)]\`"$'\n'
+    workspace_block+="   - Then switch into the new project context"$'\n\n'
+    workspace_block+="3. **Work across projects** — reference decisions or patterns from one"$'\n'
+    workspace_block+="   project while working in another. All memory files are accessible."$'\n\n'
+    workspace_block+="4. **Project memory is on-demand** — you have L0 abstracts for all projects."$'\n'
+    workspace_block+="   Only read full memory files when actively working on that project."$'\n\n'
 
-    if [[ "$PICKER" == "fzf" ]] && command -v fzf &>/dev/null; then
-        printf '%s\n' "${projects[@]}" | fzf --header="Select project:"
-    elif [[ "$PICKER" == "gum" ]] && command -v gum &>/dev/null; then
-        gum choose --header="Select project:" "${projects[@]}"
-    else
-        echo "Select a project:"
-        select p in "${projects[@]}"; do
-            if [[ -n "$p" ]]; then
-                echo "$p"
-                return
-            fi
-        done
-    fi
+    workspace_block+="$project_index"
+
+    # ── Substitute variables ──────────────────────────────────
+
+    local prompt="$core_prompt"
+    prompt="${prompt//\{\{PERSONA_BLOCK\}\}/$persona_block}"
+    prompt="${prompt//\{\{ROUTER_BLOCK\}\}/$router_block}"
+    prompt="${prompt//\{\{TRAIT_REFERENCE\}\}/$trait_reference}"
+    prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
+    prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/[Workspace mode — project constraints loaded on switch]}"
+    prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
+    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
+    prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$workspace_block}"
+    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
+    prompt="${prompt//\{\{REPO_PATH\}\}/[Workspace mode — repo path set per project]}"
+
+    export AGENT_PROMPT="$prompt"
+    export AGENT_PROJECT_NAME="_workspace"
+    export AGENT_PROJECT_DIR="$AGENT_HOME/projects"
+    export AGENT_PROJECT_TYPE="workspace"
+    export AGENT_REPO_PATH="$HOME"
+    export AGENT_PERSONA="$persona_name"
+    export AGENT_HOME="$AGENT_HOME"
 }
 
-# ── Context assembly ──────────────────────────────────────────
+# ── L1 memory loader (used by both modes) ────────────────────
+
+_load_memory_l1() {
+    local dir="$1"
+    local output=""
+    for mf in "$dir"/*.md; do
+        [[ -f "$mf" ]] || continue
+        local mf_basename
+        mf_basename=$(basename "$mf")
+        output+="### $mf_basename"$'\n'
+        output+="**Path:** \`$mf\`"$'\n'
+        local abstract
+        abstract=$(grep "^abstract:" "$mf" 2>/dev/null | head -1 | sed 's/^abstract:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//')
+        if [[ -n "$abstract" ]]; then
+            output+="**Abstract (L0):** $abstract"$'\n'
+        fi
+        output+=$(head -50 "$mf")
+        output+=$'\n\n'
+    done
+    echo "$output"
+}
+
+# ── Context assembly (single project mode) ───────────────────
 
 assemble_context() {
     local project_dir="$1"
@@ -291,32 +409,6 @@ assemble_context() {
     if [[ -f "$project_dir/constraints.md" ]]; then
         project_constraints=$(cat "$project_dir/constraints.md")
     fi
-
-    # ── Tiered memory loading (L0 abstract / L1 overview) ─────
-    # L1 = front-matter + content up to ~50 lines or first major
-    # section break. Full L2 is loaded on-demand by the agent.
-
-    _load_memory_l1() {
-        local dir="$1"
-        local output=""
-        for mf in "$dir"/*.md; do
-            [[ -f "$mf" ]] || continue
-            local basename
-            basename=$(basename "$mf")
-            output+="### $basename"$'\n'
-            output+="**Path:** \`$mf\`"$'\n'
-            # Extract L0 abstract from front-matter
-            local abstract
-            abstract=$(grep "^abstract:" "$mf" 2>/dev/null | head -1 | sed 's/^abstract:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//')
-            if [[ -n "$abstract" ]]; then
-                output+="**Abstract (L0):** $abstract"$'\n'
-            fi
-            # L1: load first 50 lines (or until second --- after front-matter)
-            output+=$(head -50 "$mf")
-            output+=$'\n\n'
-        done
-        echo "$output"
-    }
 
     # User memory (shared/memory/)
     local shared_memory=""
@@ -403,33 +495,41 @@ main() {
             ;;
     esac
 
-    # Resolve project
+    # Resolve project or enter workspace mode
     if [[ -z "$PROJECT" ]]; then
         if [[ -n "$DEFAULT_PROJECT" && "$DEFAULT_PROJECT" != "null" ]]; then
             PROJECT="$DEFAULT_PROJECT"
-        else
-            PROJECT=$(pick_project)
         fi
     fi
 
-    local project_dir="$AGENT_HOME/projects/$PROJECT"
-    if [[ ! -d "$project_dir" ]]; then
-        echo "❌ Project '$PROJECT' not found."
-        echo "   Available:"
-        cmd_list
-        exit 1
+    if [[ -z "$PROJECT" ]]; then
+        # ── Workspace mode (no project selected) ─────────────
+        echo "🚀 Starting in workspace mode (all projects available)"
+        assemble_workspace_context
+        echo "   Persona: $AGENT_PERSONA"
+        echo "   Mode: workspace (multi-project)"
+        echo "   Adapter: $ADAPTER"
+        echo ""
+    else
+        # ── Single project mode ───────────────────────────────
+        local project_dir="$AGENT_HOME/projects/$PROJECT"
+        if [[ ! -d "$project_dir" ]]; then
+            echo "❌ Project '$PROJECT' not found."
+            echo "   Available:"
+            cmd_list
+            exit 1
+        fi
+
+        echo "🚀 Loading project: $PROJECT"
+        assemble_context "$project_dir"
+        echo "   Persona: $AGENT_PERSONA"
+        echo "   Type: $AGENT_PROJECT_TYPE"
+        echo "   Adapter: $ADAPTER"
+        echo ""
+
+        # Run staleness check (quick, non-blocking)
+        cmd_check "$PROJECT" 2>/dev/null || true
     fi
-
-    # Assemble context
-    echo "🚀 Loading project: $PROJECT"
-    assemble_context "$project_dir"
-    echo "   Persona: $AGENT_PERSONA"
-    echo "   Type: $AGENT_PROJECT_TYPE"
-    echo "   Adapter: $ADAPTER"
-    echo ""
-
-    # Run staleness check (quick, non-blocking)
-    cmd_check "$PROJECT" 2>/dev/null || true
 
     # Dispatch to adapter
     local adapter_script="$AGENT_HOME/adapters/${ADAPTER}.sh"

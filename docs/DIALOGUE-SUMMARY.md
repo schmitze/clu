@@ -17,7 +17,7 @@ This document captures the complete design conversation that produced clu. It is
 
 ## Conversation Arc
 
-The conversation proceeded through eight phases:
+The conversation proceeded through nine phases:
 
 1. Initial requirements and architecture proposal
 2. Memory model refinement (automation, scope separation)
@@ -27,6 +27,7 @@ The conversation proceeded through eight phases:
 6. Documentation
 7. Naming: "clu" — Codified Likeness Utility (Tron reference)
 8. OpenClaw concept analysis and integration
+9. Workspace mode, `clu import`, permissions, macOS compatibility, and install safety
 
 ---
 
@@ -54,7 +55,7 @@ The user mentioned OpenClaw as a reference for some concepts.
 | DEC-004 | Project-based organization with YAML config | Each project is a directory with its own config and memory |
 | DEC-005 | Persona system with a router for dynamic switching | Multiple agent "roles" that transition based on work type |
 | DEC-006 | `config.yaml` for global settings | Centralized, human-readable configuration |
-| DEC-007 | Interactive project picker (fzf/gum/basic) | User selects project at launch if no default is set |
+| DEC-007 | ~~Interactive project picker (fzf/gum/basic)~~ → Superseded by DEC-029 (workspace mode) | Originally: user selects project at launch. Now: `clu` without args enters workspace mode |
 
 ### Architecture established
 
@@ -285,6 +286,49 @@ Reviewed 12 OpenClaw concepts in detail:
 - `templates/new-project/memory/journal.md` — now a weekly index pointing to daily files
 - `launcher` — added `bootstrap` and `heartbeat` subcommands, `days/` directory creation in `cmd_new`
 - `install.sh` — new commands in quick start tips, cron setup hint
+
+---
+
+## Phase 9: Workspace Mode, Import, Permissions, macOS Compatibility, and Install Safety
+
+### Changes made
+
+This phase introduced several operational improvements and a new command.
+
+### Decisions made
+
+| ID | Decision | Rationale |
+|---|---|---|
+| DEC-029 | `clu` without arguments enters workspace mode instead of interactive picker | The agent can see all projects simultaneously, switch between them, and create new ones — more powerful than a picker. The fzf/gum/basic select picker (`pick_project()`) was removed. |
+| DEC-030 | New `clu import` command | Imports Claude Code session history, global settings (plugins, MCP servers), plans, project memory, and local `.claude/settings.local.json` from repos. Writes global data to `~/.clu/shared/imported/` and project-specific data to per-project dirs. `--list` mode is read-only for previewing. |
+| DEC-031 | Always run Claude with `--dangerously-skip-permissions` | Both the Claude Code adapter and `bootstrap.sh` pass this flag so the agent can operate without interactive permission prompts. |
+| DEC-032 | New `assemble_workspace_context()` function | Builds a multi-project context for workspace mode so the agent has visibility across all projects. |
+| DEC-033 | `_load_memory_l1()` extracted as standalone function | Cleaner architecture — L1 loading is now a reusable standalone function rather than inline logic. |
+| DEC-034 | `_decode_claude_path()` validates against filesystem | Handles hyphenated directory names correctly by checking actual filesystem paths instead of relying on string manipulation alone. |
+| DEC-035 | Portable macOS helpers: `_sed_i()`, `_date_to_epoch()`, `_date_relative()` | macOS ships BSD sed and date which behave differently from GNU versions. These helpers abstract the differences. Added to both `launcher` and `heartbeat.sh`. |
+| DEC-036 | Fresh install excludes `.git/` | Prevents copying the clu source repo's git history into the user's `~/.clu` directory. |
+| DEC-037 | Upgrade preserves user's `config.yaml` | User customizations to global config are no longer overwritten during upgrades. |
+
+### Architecture changes
+
+- **New directory:** `shared/imported/` for global Claude Code imports
+- **New function:** `assemble_workspace_context()` in launcher
+- **Extracted function:** `_load_memory_l1()` as standalone
+- **New helpers:** `_sed_i()`, `_date_to_epoch()`, `_date_relative()` in launcher and heartbeat.sh
+- **Removed function:** `pick_project()` (replaced by workspace mode)
+- **Updated function:** `_decode_claude_path()` now validates against filesystem
+
+### Files created
+
+- `shared/imported/` directory structure for Claude Code imports
+
+### Files modified
+
+- `launcher` — workspace mode, `clu import` subcommand, `assemble_workspace_context()`, standalone `_load_memory_l1()`, `_decode_claude_path()` filesystem validation, portable macOS helpers, removed `pick_project()`
+- `adapters/claude-code.sh` — added `--dangerously-skip-permissions` flag
+- `bootstrap.sh` — added `--dangerously-skip-permissions` flag, portable macOS helpers
+- `heartbeat.sh` — portable macOS helpers (`_sed_i()`, `_date_to_epoch()`, `_date_relative()`)
+- `install.sh` — exclude `.git/` on fresh install, preserve `config.yaml` on upgrade
 
 ---
 
