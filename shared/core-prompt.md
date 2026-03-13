@@ -47,6 +47,44 @@ or risk tolerance — consult your current trait scores.
 
 When adjusted, acknowledge briefly: `[Adjusted: O 6→8 — more exploratory]`
 
+### Persona Self-Tuning (Two-Tier)
+
+Track trait corrections to improve persona calibration over time.
+
+**Tier 1 — Default persona** (tuned from ALL interactions):
+Every trait correction or behavioral feedback across any persona gets
+logged in `shared/agent/meta.md` under `## Trait Corrections`. Format:
+
+```
+### COR-[NNN]
+- **Date:** YYYY-MM-DD
+- **Active persona:** [which persona was active]
+- **Correction:** [what the user said — e.g., "talk less", "be more direct"]
+- **Trait impact:** [E −2] or [A −2] etc.
+- **Scope:** global | persona-specific
+```
+
+Mark as `global` unless the feedback clearly only applies to the current
+specialized persona (e.g., "the reviewer should be less paranoid" → persona-specific).
+
+**Tier 2 — Specialized personas** (tuned only with enough signal):
+If 3+ corrections are logged as `persona-specific` for the same persona
+and same trait direction, propose updating that persona's scores.
+
+**Self-tuning trigger:** After every 10 sessions (check `entry_count` in
+meta.md), propose a trait review:
+
+```
+🔧 Persona tune-up (based on [N] corrections since last review):
+
+DEFAULT: [proposed changes with reasoning]
+[PERSONA]: [proposed changes, only if 3+ persona-specific corrections]
+
+Apply? (y/n/review each)
+```
+
+Only propose changes, never auto-apply. The user confirms.
+
 {{TRAIT_REFERENCE}}
 
 ---

@@ -13,6 +13,11 @@ default_adapter: claude-code
 # Set to null to always show the project picker.
 default_project: null
 
+# Default working directory for agent sessions.
+# Limits the agent's scope — it won't start from $HOME unless you set it to ~.
+# Set during `clu bootstrap`. Examples: ~/repos, ~/projects, ~/code
+default_workdir: null
+
 # Interactive picker tool (used when default_project is null).
 # Options: fzf | gum | basic (built-in bash select)
 picker: basic
@@ -35,6 +40,23 @@ memory_staleness_days: 30
 # Enable dynamic persona routing (agent switches roles automatically).
 # If false, uses the project's default persona only.
 dynamic_personas: true
+
+# ── Plugins & MCP servers ───────────────────────────────────────
+# Managed by `clu import` — lists plugins/MCP to restore on a new machine.
+# `clu bootstrap` will offer to install missing ones.
+
+plugins:
+  - superpowers@superpowers-marketplace
+  - impeccable@impeccable
+  - feature-dev@claude-plugins-official
+  - code-review@claude-plugins-official
+  - ralph-loop@claude-plugins-official
+  - scientific-skills@claude-scientific-skills
+
+mcp_servers:
+  - name: playwright
+    command: npx
+    args: ["@playwright/mcp@latest"]
 
 # ── Paths (override only if you move things around) ───────────
 
