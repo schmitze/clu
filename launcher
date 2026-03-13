@@ -236,9 +236,13 @@ assemble_workspace_context() {
     local global_constraints=""
     [[ -f "$AGENT_HOME/shared/constraints.md" ]] && global_constraints=$(cat "$AGENT_HOME/shared/constraints.md")
 
-    # Trait reference
+    # Trait reference (linked, not inline — saves ~6k chars)
     local trait_reference=""
-    [[ -f "$AGENT_HOME/personas/_traits.md" ]] && trait_reference=$(cat "$AGENT_HOME/personas/_traits.md")
+    if [[ -f "$AGENT_HOME/personas/_traits.md" ]]; then
+        trait_reference="## Big Five Trait System"$'\n\n'
+        trait_reference+="Full trait reference: \`$AGENT_HOME/personas/_traits.md\`"$'\n'
+        trait_reference+="Read this file when you need to interpret persona trait scores."
+    fi
 
     # Shared memory (user + agent)
     local shared_memory=""
@@ -350,6 +354,17 @@ _load_memory_l1() {
         [[ -f "$mf" ]] || continue
         local mf_basename
         mf_basename=$(basename "$mf")
+
+        # Skip template-only files (no real content beyond placeholders)
+        local content_lines
+        content_lines=$(grep -cvE '^\s*$|^#|^---|^<|^\[.*\]$|^>\s|{{.*}}' "$mf" 2>/dev/null || echo "0")
+        if [[ "$content_lines" -lt 5 ]]; then
+            # Still list it as available, but don't inline content
+            output+="### $mf_basename"$'\n'
+            output+="**Path:** \`$mf\` *(template — read on demand)*"$'\n\n'
+            continue
+        fi
+
         output+="### $mf_basename"$'\n'
         output+="**Path:** \`$mf\`"$'\n'
         local abstract
@@ -434,10 +449,12 @@ assemble_context() {
     local resolved_repo="${repo_path/\~/$HOME}"
     resolved_repo="${resolved_repo:-[no repo - this is a non-code project]}"
 
-    # Trait reference (Big Five behavior mapping)
+    # Trait reference (linked, not inline — saves ~6k chars)
     local trait_reference=""
     if [[ -f "$AGENT_HOME/personas/_traits.md" ]]; then
-        trait_reference=$(cat "$AGENT_HOME/personas/_traits.md")
+        trait_reference="## Big Five Trait System"$'\n\n'
+        trait_reference+="Full trait reference: \`$AGENT_HOME/personas/_traits.md\`"$'\n'
+        trait_reference+="Read this file when you need to interpret persona trait scores."
     fi
 
     # ── Substitute variables in core prompt ───────────────────

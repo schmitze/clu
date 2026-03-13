@@ -323,6 +323,15 @@ if [[ -d "$CLAUDE_PROJECTS" ]]; then
         # Skip if no sessions
         [[ "$sessions" -eq 0 ]] && continue
 
+        # Skip home directory and its direct subdirectories (not real projects)
+        # e.g. /home/mi, /home/mi/Downloads, /home/mi/repos — unless it's a git repo
+        local rel="${decoded#"$HOME"}"
+        if [[ "$decoded" == "$HOME" ]] || [[ "$rel" != "$decoded" && "$rel" != */*/* ]]; then
+            if [[ ! -d "$decoded/.git" ]]; then
+                continue
+            fi
+        fi
+
         has_memory="no"
         _has_claude_memory "$project_dir" && has_memory="yes"
 
