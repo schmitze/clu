@@ -97,6 +97,25 @@ EOF
 
     cp "$claude_md" "$launch_dir/CLAUDE.md"
 
+    # ── Cleanup handler ─────────────────────────────────────
+    # Ensures CLAUDE.md is restored/removed even on Ctrl+C or crash.
+    # Uses global vars because trap can't capture locals from outer scope.
+
+    _CLU_LAUNCH_DIR="$launch_dir"
+    _CLU_BACKUP="$existing_claude_md"
+
+    _clu_cleanup_claude_md() {
+        if [[ -n "${_CLU_BACKUP:-}" && -f "$_CLU_BACKUP" ]]; then
+            mv "$_CLU_BACKUP" "$_CLU_LAUNCH_DIR/CLAUDE.md"
+            echo "📋 Restored original CLAUDE.md"
+        else
+            rm -f "$_CLU_LAUNCH_DIR/CLAUDE.md"
+        fi
+        trap - EXIT INT TERM
+    }
+
+    trap _clu_cleanup_claude_md EXIT INT TERM
+
     # ── Parse extra flags from config ─────────────────────────
 
     local extra_flags=""
@@ -128,14 +147,7 @@ EOF
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # ── Cleanup ───────────────────────────────────────────────
-
-    # Restore original CLAUDE.md if there was one
-    if [[ -n "$existing_claude_md" && -f "$existing_claude_md" ]]; then
-        mv "$existing_claude_md" "$launch_dir/CLAUDE.md"
-        echo "📋 Restored original CLAUDE.md"
-    else
-        rm -f "$launch_dir/CLAUDE.md"
-    fi
+    _clu_cleanup_claude_md
 
     # ── Post-session prompt ───────────────────────────────────
 

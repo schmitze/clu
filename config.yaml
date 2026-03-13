@@ -16,7 +16,7 @@ default_project: null
 # Default working directory for agent sessions.
 # Limits the agent's scope — it won't start from $HOME unless you set it to ~.
 # Set during `clu bootstrap`. Examples: ~/repos, ~/projects, ~/code
-default_workdir: null
+default_workdir: ~/repos
 
 # Interactive picker tool (used when default_project is null).
 # Options: fzf | gum | basic (built-in bash select)
@@ -35,6 +35,11 @@ confirm_memory_writes: true
 # get flagged at session start.
 memory_staleness_days: 30
 
+# Maximum chars for the assembled prompt (CLAUDE.md).
+# If exceeded, the launcher progressively trims memory detail.
+# Claude Code warns at 40000. Leave headroom for adapter overhead.
+prompt_budget_chars: 38000
+
 # ── Persona system ────────────────────────────────────────────
 
 # Enable dynamic persona routing (agent switches roles automatically).
@@ -47,11 +52,11 @@ dynamic_personas: true
 
 plugins:
   - superpowers@superpowers-marketplace
+  - scientific-skills@claude-scientific-skills
   - impeccable@impeccable
   - feature-dev@claude-plugins-official
   - code-review@claude-plugins-official
   - ralph-loop@claude-plugins-official
-  - scientific-skills@claude-scientific-skills
 
 mcp_servers:
   - name: playwright

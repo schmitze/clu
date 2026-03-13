@@ -276,17 +276,25 @@ assemble_workspace_context() {
         [[ "$prepo" != "null" && -n "$prepo" ]] && project_index+="- **Repo:** \`$prepo\`"$'\n'
         project_index+="- **Default persona:** $ppersona"$'\n'
         project_index+="- **Project dir:** \`$dir\`"$'\n'
-        project_index+="- **Memory files:**"$'\n'
 
+        # Only list memory files that have real content (non-empty abstracts)
+        local has_content_files=false
+        local content_files=""
         for mf in "$dir"/memory/*.md; do
             [[ -f "$mf" ]] || continue
             local abstract
             abstract=$(grep "^abstract:" "$mf" 2>/dev/null | head -1 | sed 's/^abstract:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//')
-            project_index+="  - \`$mf\`"
-            [[ -n "$abstract" ]] && project_index+=" — $abstract"
-            project_index+=$'\n'
+            # Skip files with empty/placeholder abstracts
+            if [[ -n "$abstract" && "$abstract" != *"Empty"* && "$abstract" != *"no entries"* ]]; then
+                content_files+="  - \`$(basename "$mf")\` — $abstract"$'\n'
+                has_content_files=true
+            fi
         done
-        [[ -f "$dir/constraints.md" ]] && project_index+="- **Constraints:** \`$dir/constraints.md\`"$'\n'
+
+        if [[ "$has_content_files" == "true" ]]; then
+            project_index+="- **Memory:**"$'\n'
+            project_index+="$content_files"
+        fi
         project_index+=$'\n'
     done
 
@@ -343,6 +351,178 @@ assemble_workspace_context() {
     export AGENT_REPO_PATH="$default_workdir"
     export AGENT_PERSONA="$persona_name"
     export AGENT_HOME="$AGENT_HOME"
+
+    # Pass context for budget enforcement to rebuild if needed
+    _BUDGET_PROJECT_CONSTRAINTS="[Workspace mode — project constraints loaded on switch]"
+    _BUDGET_PROJECT_MEMORY="$workspace_block"
+    _enforce_budget || true
+}
+
+# ── Prompt budget enforcement ─────────────────────────────────
+#
+# After assembly, checks if AGENT_PROMPT exceeds the configured
+# char budget. If so, progressively reduces detail:
+#   Tier 1: Agent memory → abstracts only
+#   Tier 2: Project index → compact (name/type/repo only)
+#   Tier 3: Shared memory → abstracts only
+# Warns if still over budget after all tiers.
+
+PROMPT_BUDGET=$(yaml_get "$CONFIG_FILE" "prompt_budget_chars")
+PROMPT_BUDGET="${PROMPT_BUDGET:-38000}"
+
+_load_memory_l0() {
+    # Compact loader: abstracts + paths only, no inline content
+    local dir="$1"
+    local output=""
+    for mf in "$dir"/*.md; do
+        [[ -f "$mf" ]] || continue
+        local mf_basename
+        mf_basename=$(basename "$mf")
+        local abstract
+        abstract=$(grep "^abstract:" "$mf" 2>/dev/null | head -1 | sed 's/^abstract:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//')
+        output+="- \`$mf\`"
+        [[ -n "$abstract" ]] && output+=" — $abstract"
+        output+=$'\n'
+    done
+    echo "$output"
+}
+
+_build_compact_project_index() {
+    # Minimal project listing: name, type, repo path only
+    local output=""
+    output+="## Available Projects"$'\n\n'
+    for dir in "$AGENT_HOME"/projects/*/; do
+        [[ -d "$dir" ]] || continue
+        local pname ptype prepo
+        pname=$(basename "$dir")
+        ptype=$(yaml_get "$dir/project.yaml" "type" 2>/dev/null || echo "mixed")
+        prepo=$(yaml_get "$dir/project.yaml" "repo_path" 2>/dev/null || echo "")
+        output+="- **$pname** ($ptype)"
+        [[ -n "$prepo" && "$prepo" != "null" ]] && output+=" — \`$prepo\`"
+        output+=" — dir: \`$dir\`"
+        output+=$'\n'
+    done
+    echo "$output"
+}
+
+_enforce_budget() {
+    local current_size=${#AGENT_PROMPT}
+    if [[ "$current_size" -le "$PROMPT_BUDGET" ]]; then
+        return 0
+    fi
+
+    echo "   ⚠ Prompt size ${current_size} > budget ${PROMPT_BUDGET}. Trimming..."
+
+    # We rebuild the prompt with progressively lower detail.
+    # Strategy: re-substitute specific {{PLACEHOLDERS}} in the core
+    # template with compact versions, keeping a copy of the template.
+    local core_prompt
+    core_prompt=$(cat "$AGENT_HOME/shared/core-prompt.md")
+
+    # Reload persona/router/constraints/trait (these are small, keep as-is)
+    local persona_name="${AGENT_PERSONA:-default}"
+    local persona_file="$AGENT_HOME/personas/${persona_name}.md"
+    local persona_block=""
+    [[ -f "$persona_file" ]] && persona_block=$(cat "$persona_file") || persona_block=$(cat "$AGENT_HOME/personas/default.md")
+
+    local router_block=""
+    [[ "$DYNAMIC_PERSONAS" == "true" && -f "$AGENT_HOME/personas/_router.md" ]] && router_block=$(cat "$AGENT_HOME/personas/_router.md")
+
+    local global_constraints=""
+    [[ -f "$AGENT_HOME/shared/constraints.md" ]] && global_constraints=$(cat "$AGENT_HOME/shared/constraints.md")
+
+    local trait_reference=""
+    if [[ -f "$AGENT_HOME/personas/_traits.md" ]]; then
+        trait_reference="Full trait reference: \`$AGENT_HOME/personas/_traits.md\`"
+    fi
+
+    # Start with current detail levels, then reduce tier by tier
+    local shared_memory agent_memory project_memory project_constraints
+    shared_memory=$(_load_memory_l1 "$AGENT_HOME/shared/memory")
+    agent_memory=$(_load_memory_l1 "$AGENT_HOME/shared/agent" 2>/dev/null || echo "")
+    project_constraints="${_BUDGET_PROJECT_CONSTRAINTS:-[Workspace mode — project constraints loaded on switch]}"
+    project_memory="${_BUDGET_PROJECT_MEMORY:-}"
+
+    # ── Tier 1: Agent memory → abstracts only ─────────────────
+    agent_memory=$(_load_memory_l0 "$AGENT_HOME/shared/agent" 2>/dev/null || echo "")
+    local prompt="$core_prompt"
+    prompt="${prompt//\{\{PERSONA_BLOCK\}\}/$persona_block}"
+    prompt="${prompt//\{\{ROUTER_BLOCK\}\}/$router_block}"
+    prompt="${prompt//\{\{TRAIT_REFERENCE\}\}/$trait_reference}"
+    prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
+    prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/$project_constraints}"
+    prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
+    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
+    prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$project_memory}"
+    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
+    prompt="${prompt//\{\{REPO_PATH\}\}/${AGENT_REPO_PATH:-}}"
+    prompt="${prompt//\{\{AGENT_HOME\}\}/$AGENT_HOME}"
+
+    if [[ "${#prompt}" -le "$PROMPT_BUDGET" ]]; then
+        echo "   ✓ Tier 1 (compact agent memory): ${#prompt} chars"
+        export AGENT_PROMPT="$prompt"
+        return 0
+    fi
+
+    # ── Tier 2: Compact project index ─────────────────────────
+    if [[ "$AGENT_PROJECT_TYPE" == "workspace" ]]; then
+        local compact_index
+        compact_index=$(_build_compact_project_index)
+        # Rebuild workspace block with compact index
+        local workspace_block=""
+        workspace_block+="## Workspace Mode"$'\n\n'
+        workspace_block+="Multi-project navigation. Switch by reading project memory. Announce: \`[→ Project: <name> (<type>)]\`"$'\n'
+        workspace_block+="Create new projects with \`cp -r $AGENT_HOME/templates/new-project $AGENT_HOME/projects/<name>\`"$'\n\n'
+        workspace_block+="$compact_index"
+        project_memory="$workspace_block"
+    fi
+
+    prompt="$core_prompt"
+    prompt="${prompt//\{\{PERSONA_BLOCK\}\}/$persona_block}"
+    prompt="${prompt//\{\{ROUTER_BLOCK\}\}/$router_block}"
+    prompt="${prompt//\{\{TRAIT_REFERENCE\}\}/$trait_reference}"
+    prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
+    prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/$project_constraints}"
+    prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
+    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
+    prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$project_memory}"
+    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
+    prompt="${prompt//\{\{REPO_PATH\}\}/${AGENT_REPO_PATH:-}}"
+    prompt="${prompt//\{\{AGENT_HOME\}\}/$AGENT_HOME}"
+
+    if [[ "${#prompt}" -le "$PROMPT_BUDGET" ]]; then
+        echo "   ✓ Tier 2 (compact project index): ${#prompt} chars"
+        export AGENT_PROMPT="$prompt"
+        return 0
+    fi
+
+    # ── Tier 3: Shared memory → abstracts only ────────────────
+    shared_memory=$(_load_memory_l0 "$AGENT_HOME/shared/memory")
+
+    prompt="$core_prompt"
+    prompt="${prompt//\{\{PERSONA_BLOCK\}\}/$persona_block}"
+    prompt="${prompt//\{\{ROUTER_BLOCK\}\}/$router_block}"
+    prompt="${prompt//\{\{TRAIT_REFERENCE\}\}/$trait_reference}"
+    prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
+    prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/$project_constraints}"
+    prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
+    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
+    prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$project_memory}"
+    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
+    prompt="${prompt//\{\{REPO_PATH\}\}/${AGENT_REPO_PATH:-}}"
+    prompt="${prompt//\{\{AGENT_HOME\}\}/$AGENT_HOME}"
+
+    if [[ "${#prompt}" -le "$PROMPT_BUDGET" ]]; then
+        echo "   ✓ Tier 3 (compact shared memory): ${#prompt} chars"
+        export AGENT_PROMPT="$prompt"
+        return 0
+    fi
+
+    # Still over budget — warn but proceed
+    echo "   ⚠ Still over budget after all tiers: ${#prompt} chars (budget: $PROMPT_BUDGET)"
+    echo "     Consider reducing core-prompt.md or splitting projects."
+    export AGENT_PROMPT="$prompt"
+    return 1
 }
 
 # ── L1 memory loader (used by both modes) ────────────────────
@@ -478,6 +658,11 @@ assemble_context() {
     export AGENT_PROJECT_TYPE="$project_type"
     export AGENT_REPO_PATH="$resolved_repo"
     export AGENT_PERSONA="$persona_name"
+
+    # Budget enforcement
+    _BUDGET_PROJECT_CONSTRAINTS="$project_constraints"
+    _BUDGET_PROJECT_MEMORY="$project_memory"
+    _enforce_budget || true
     export AGENT_HOME="$AGENT_HOME"
 }
 
