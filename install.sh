@@ -135,7 +135,7 @@ check_dep "gum" "Pretty project picker (Charm)" "false"
 
 # ── Heartbeat cron setup ─────────────────────────────────────
 
-CRON_LINE="0 8 * * * $INSTALL_DIR/heartbeat.sh >> $INSTALL_DIR/heartbeat.log 2>&1"
+CRON_LINE="0 4 * * * $INSTALL_DIR/heartbeat.sh >> $INSTALL_DIR/heartbeat.log 2>&1"
 
 echo ""
 echo "🫀 Daily heartbeat"
@@ -146,7 +146,7 @@ echo ""
 
 SETUP_CRON=false
 if command -v crontab &>/dev/null; then
-    read -p "   Set up daily heartbeat at 8am? (y/n) " -n 1 -r
+    read -p "   Set up daily heartbeat at 4am? (y/n)" -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         # Check if already installed
@@ -155,7 +155,7 @@ if command -v crontab &>/dev/null; then
         else
             # Append to existing crontab (preserve existing entries)
             (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
-            echo "   ✅ Heartbeat scheduled daily at 8am."
+            echo "   ✅ Heartbeat scheduled daily at 4am."
             echo "   View with: crontab -l"
             echo "   Remove with: crontab -l | grep -v heartbeat.sh | crontab -"
             SETUP_CRON=true

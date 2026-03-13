@@ -9,8 +9,8 @@
 #   clu heartbeat              → run all maintenance tasks
 #   clu heartbeat <project>    → run for a specific project
 #
-# Cron setup (daily at 8am):
-#   0 8 * * * $HOME/.clu/heartbeat.sh >> $HOME/.clu/heartbeat.log 2>&1
+# Cron setup (daily at 4am):
+#   0 4 * * * $HOME/.clu/heartbeat.sh >> $HOME/.clu/heartbeat.log 2>&1
 #
 # What it does:
 #   1. Memory staleness check across all projects

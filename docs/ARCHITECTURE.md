@@ -662,7 +662,7 @@ clu heartbeat
            Surfaces open threads and next-session notes
 ```
 
-The heartbeat never modifies files or starts agent sessions — it's purely diagnostic. Designed for cron: `0 8 * * * ~/.clu/heartbeat.sh`
+The heartbeat never modifies files or starts agent sessions — it's purely diagnostic. Designed for cron: `0 4 * * * ~/.clu/heartbeat.sh`
 
 ---
 

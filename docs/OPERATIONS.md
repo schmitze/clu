@@ -499,12 +499,12 @@ clu heartbeat my-project   # specific project
 
 ### Cron setup
 
-For automatic daily maintenance at 8am:
+For automatic daily maintenance at 4am:
 
 ```bash
 crontab -e
 # Add this line:
-0 8 * * * $HOME/.clu/heartbeat.sh >> $HOME/.clu/heartbeat.log 2>&1
+0 4 * * * $HOME/.clu/heartbeat.sh >> $HOME/.clu/heartbeat.log 2>&1
 ```
 
 The heartbeat is non-interactive — it reads files and logs output. It never modifies memory files or starts agent sessions.
