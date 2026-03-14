@@ -31,6 +31,7 @@ AGENT_HOME = Path(os.environ.get("CLU_HOME", Path.home() / ".clu"))
 DEFAULT_PORT = 3141
 
 SECURITY_REPORT = AGENT_HOME / "shared" / "agent" / "security-report.md"
+SECURITY_INCIDENTS = AGENT_HOME / "security-incidents.jsonl"
 HEARTBEAT_LOG = AGENT_HOME / "heartbeat.log"
 AGENT_LOG = AGENT_HOME / "heartbeat-agent.log"
 CONFIG_FILE = AGENT_HOME / "config.yaml"
@@ -77,11 +78,14 @@ def parse_simple_yaml(path):
                 current_section = None
                 result[k.strip()] = v
         elif current_section and line.startswith("  ") and ":" in line:
+            if isinstance(result.get(current_section), list):
+                # Section already parsed as list, skip key:value lines
+                continue
             k, v = line.strip().split(":", 1)
             result.setdefault(current_section, {})[k.strip()] = v.strip()
         elif current_section and line.strip().startswith("- "):
             val = line.strip()[2:].strip()
-            if isinstance(result.get(current_section), dict):
+            if isinstance(result.get(current_section), dict) and not result[current_section]:
                 result[current_section] = []
             if isinstance(result.get(current_section), list):
                 result[current_section].append(val)
@@ -198,6 +202,24 @@ def scan_projects():
             "memory_files": mem_files,
         })
     return projects
+
+
+def parse_security_incidents():
+    """Parse the persistent security incident log (JSONL)."""
+    if not SECURITY_INCIDENTS.exists():
+        return []
+    incidents = []
+    for line in SECURITY_INCIDENTS.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            incidents.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    # Most recent first
+    incidents.reverse()
+    return incidents
 
 
 def extract_recommendations():
@@ -416,6 +438,7 @@ pre {
     <div class="tab active" data-panel="security">Security</div>
     <div class="tab" data-panel="heartbeat">Heartbeat</div>
     <div class="tab" data-panel="projects">Projects</div>
+    <div class="tab" data-panel="incidents">Incidents</div>
     <div class="tab" data-panel="actions">Actions</div>
 </div>
 
@@ -444,6 +467,17 @@ pre {
     <!-- Projects Panel -->
     <div class="panel" id="panel-projects">
         <div class="card-grid" id="project-grid"></div>
+    </div>
+
+    <!-- Incidents Panel -->
+    <div class="panel" id="panel-incidents">
+        <div class="card">
+            <h3>Security Incident History</h3>
+            <p style="color:var(--text-dim); font-size:13px; margin-bottom:12px">
+                Persistent log of all security events detected by heartbeat audits.
+            </p>
+            <div id="incident-list"></div>
+        </div>
     </div>
 
     <!-- Actions Panel -->
@@ -625,6 +659,32 @@ function renderRecommendations(recs) {
     }
 }
 
+function renderIncidents(incidents) {
+    const el = document.getElementById('incident-list');
+    const incTab = document.querySelector('[data-panel="incidents"]');
+
+    if (!incidents || !incidents.length) {
+        el.innerHTML = '<p class="empty">No security incidents recorded.</p>';
+        incTab.textContent = 'Incidents';
+        return;
+    }
+
+    incTab.innerHTML = `Incidents <span class="badge">${incidents.length}</span>`;
+
+    el.innerHTML = `<table>
+        <tr><th>Time</th><th>Severity</th><th>Source</th><th>Detail</th></tr>
+        ${incidents.map(i => {
+            const sevCls = i.severity === 'critical' ? 'status-critical' : i.severity === 'high' ? 'status-issues' : 'status-unknown';
+            return `<tr>
+                <td style="white-space:nowrap">${escapeHtml(i.timestamp || '?')}</td>
+                <td><span class="status-badge ${sevCls}">${escapeHtml(i.severity || '?')}</span></td>
+                <td>${escapeHtml(i.source || '?')}</td>
+                <td>${escapeHtml(i.detail || '')}</td>
+            </tr>`;
+        }).join('')}
+    </table>`;
+}
+
 // ── Helpers ──────────────────────────────────────────
 
 function escapeHtml(s) {
@@ -691,14 +751,15 @@ async function submitActions() {
 
 async function refreshAll() {
     try {
-        const [security, heartbeat, projects, recs] = await Promise.all([
-            api('security'), api('heartbeat'), api('projects'), api('recommendations'),
+        const [security, heartbeat, projects, recs, incidents] = await Promise.all([
+            api('security'), api('heartbeat'), api('projects'), api('recommendations'), api('incidents'),
         ]);
-        data = {security, heartbeat, projects, recs};
+        data = {security, heartbeat, projects, recs, incidents};
         renderSecurity(security);
         renderHeartbeat(heartbeat);
         renderProjects(projects);
         renderRecommendations(recs);
+        renderIncidents(incidents);
         document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString();
     } catch (e) {
         console.error('Refresh failed:', e);
@@ -731,6 +792,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(scan_projects())
         elif path == "/api/recommendations":
             self._send_json(extract_recommendations())
+        elif path == "/api/incidents":
+            self._send_json(parse_security_incidents())
         elif path == "/api/config":
             self._send_json(get_config())
         elif path == "/api/meta":

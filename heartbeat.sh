@@ -352,12 +352,25 @@ elif [[ ! -s "$AGENT_HOME/shared/constraints.md" ]]; then
     security_issues=$((security_issues + 1))
 fi
 
-# --- Summary ---
+# --- Summary & persistent incident log ---
+
+INCIDENT_LOG="$AGENT_HOME/security-incidents.jsonl"
 
 if [[ $security_issues -eq 0 ]]; then
     log "  ✅ No security issues found."
 else
     log "  🚨 $security_issues security issue(s) found! Review above."
+    # Log each incident to persistent JSONL file
+    # Re-scan to collect details (the log already has them, extract from recent output)
+    grep -E '🚨|INJECTION|TAMPERED|CREDENTIAL|WORLD-WRITABLE|STAGING' "$AGENT_HOME/heartbeat.log" \
+        | tail -"$security_issues" \
+        | while IFS= read -r incident_line; do
+            printf '{"timestamp":"%s","severity":"critical","source":"heartbeat-bash","detail":"%s"}\n' \
+                "$TIMESTAMP" \
+                "$(echo "$incident_line" | sed 's/"/\\"/g' | sed 's/\[.*\] *//')" \
+                >> "$INCIDENT_LOG"
+        done
+    log "  📋 Logged $security_issues incident(s) to security-incidents.jsonl"
 fi
 
 # ── Task 6: Agent-driven deep security audit ──────────────
@@ -506,11 +519,18 @@ if command -v claude &>/dev/null; then
         log "  ⚠ Agent audit exited with code $agent_exit. Check $AGENT_HOME/heartbeat-agent.log"
     fi
 
-    # Check if the agent found issues
+    # Check if the agent found issues and log to incident file
     if [[ -f "$SECURITY_REPORT" ]]; then
         report_status=$(grep "^status:" "$SECURITY_REPORT" 2>/dev/null | head -1 | sed 's/.*status:[[:space:]]*//' || true)
         if [[ "$report_status" == "issues-found" || "$report_status" == "action-taken" ]]; then
             log "  🚨 Agent found security issues! Review: $SECURITY_REPORT"
+            # Extract summary for incident log
+            local summary
+            summary=$(grep -A2 "^## Summary" "$SECURITY_REPORT" 2>/dev/null | tail -1 | sed 's/"/\\"/g' || echo "See report")
+            printf '{"timestamp":"%s","severity":"high","source":"heartbeat-agent","detail":"%s","report":"%s"}\n' \
+                "$TIMESTAMP" "$summary" "$SECURITY_REPORT" \
+                >> "$INCIDENT_LOG"
+            log "  📋 Logged agent findings to security-incidents.jsonl"
         fi
     fi
 else
