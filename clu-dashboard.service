@@ -1,0 +1,13 @@
+[Unit]
+Description=clu Dashboard — Agent Workstation Monitor
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.clu/dashboard.py
+Environment=CLU_HOME=%h/.clu
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

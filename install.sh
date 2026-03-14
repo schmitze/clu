@@ -52,6 +52,7 @@ _copy_framework_files() {
     cp -r "$src/personas/" "$dst/personas/"
     cp -r "$src/templates/" "$dst/templates/"
     cp -r "$src/docs/" "$dst/docs/"
+    cp "$src/clu-dashboard.service" "$dst/clu-dashboard.service"
     cp "$src/.gitignore" "$dst/.gitignore"
     mkdir -p "$dst/shared"
     cp "$src/shared/core-prompt.md" "$dst/shared/core-prompt.md"
@@ -167,6 +168,37 @@ if command -v crontab &>/dev/null; then
 else
     echo "   ⬜ crontab not found. Set up manually if desired:"
     echo "   $CRON_LINE"
+fi
+
+# ── Dashboard systemd service ────────────────────────────────
+
+echo ""
+echo "📊 Dashboard service"
+echo "   The dashboard provides a local web UI for monitoring"
+echo "   projects, security audits, and heartbeat status."
+echo ""
+
+SETUP_DASHBOARD=false
+if command -v systemctl &>/dev/null && [[ -d "$HOME/.config/systemd/user" || true ]]; then
+    read -p "   Set up dashboard as a persistent service? (y/n) " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        mkdir -p "$HOME/.config/systemd/user"
+        cp "$INSTALL_DIR/clu-dashboard.service" "$HOME/.config/systemd/user/clu-dashboard.service"
+        systemctl --user daemon-reload
+        systemctl --user enable clu-dashboard.service
+        systemctl --user start clu-dashboard.service
+        echo "   ✅ Dashboard running at http://localhost:3141"
+        echo "   Manage with:"
+        echo "     systemctl --user status clu-dashboard"
+        echo "     systemctl --user restart clu-dashboard"
+        echo "     journalctl --user -u clu-dashboard -f"
+        SETUP_DASHBOARD=true
+    else
+        echo "   Skipped. Start manually with: clu dashboard"
+    fi
+else
+    echo "   ⬜ systemd not available. Start manually with: clu dashboard"
 fi
 
 # ── Done ──────────────────────────────────────────────────────
