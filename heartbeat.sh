@@ -34,6 +34,9 @@
 
 set -euo pipefail
 
+# ── Ensure common user paths are in PATH (cron/systemd inherit minimal PATH)
+export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+
 # ── Portable helpers (Linux + macOS) ─────────────────────────
 
 # Portable date string to epoch (GNU: date -d, macOS: date -j -f)
@@ -287,7 +290,7 @@ _scan_credentials() {
     local file="$1"
     local hits
     hits=$(grep -inE \
-        'api[_-]?key["[:space:]:=]+[A-Za-z0-9]{20}|bearer [A-Za-z0-9._-]{20,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|password["[:space:]:=]+[^[:space:]]{8,}|secret["[:space:]:=]+[^[:space:]]{8,}|token["[:space:]:=]+[A-Za-z0-9._-]{20,}|-----BEGIN (RSA |EC )?PRIVATE KEY' \
+        'api[_-]?key["[:space:]:=]+[A-Za-z0-9]{20}|bearer [A-Za-z0-9._-]{20,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|password["[:space:]:=]+[^[:space:]]{8,}|secret["[:space:]:=]+[^[:space:]]{8,}|token["[:space:]:=]+[A-Za-z0-9._-]{20,}|-----BEGIN (RSA |EC )?PRIVATE KEY|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|ntn_[A-Za-z0-9]{20,}' \
         "$file" 2>/dev/null | head -3 || true)
     if [[ -n "$hits" ]]; then
         log "  ⚠ CREDENTIAL SUSPECT: $file"
@@ -303,10 +306,9 @@ done
 
 for project_dir in "${project_dirs[@]}"; do
     [[ -d "$project_dir" ]] || continue
-    for mf in "$project_dir"/memory/*.md; do
-        [[ -f "$mf" ]] || continue
+    while IFS= read -r -d '' mf; do
         _scan_credentials "$mf"
-    done
+    done < <(find "$project_dir/memory" -name '*.md' -print0 2>/dev/null)
 done
 
 # --- 5d: File permissions audit ---

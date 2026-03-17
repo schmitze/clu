@@ -5,9 +5,22 @@
 *~
 .DS_Store
 
+# Secrets — never commit
+.secrets.env
+
 # Sensitive data — uncomment if your memory files contain secrets
 # projects/*/memory/
 # shared/memory/
 
+# Python cache
+__pycache__/
+
+# Runtime logs
+heartbeat.log
+
+# Instance-specific files (generated per-install)
+shared/
+
 # Adapter staging directories
 /staging/
+CLAUDE.md

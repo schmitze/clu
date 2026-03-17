@@ -17,6 +17,7 @@ import http.server
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -89,6 +90,11 @@ def parse_simple_yaml(path):
                 result[current_section] = []
             if isinstance(result.get(current_section), list):
                 result[current_section].append(val)
+    # Clean up quoted empty strings
+    for k, v in result.items():
+        if isinstance(v, str):
+            v = v.strip('"').strip("'")
+            result[k] = v if v else ""
     return result
 
 
@@ -222,24 +228,83 @@ def parse_security_incidents():
     return incidents
 
 
+def infer_recommendation_action(text):
+    """Map recommendation text to an actionable fix."""
+    # Strip markdown bold markers and numbering for matching
+    clean = re.sub(r'\*\*', '', text)
+    tl = clean.lower()
+
+    # Skill removal: "removing offer-k-dense-web skill" or "`offer-k-dense-web` skill"
+    m = re.search(r'remov\w*\s+`?([\w-]+)`?\s+skill', tl)
+    if not m:
+        m = re.search(r'`([\w-]+)`\s+skill', tl)
+    if m:
+        return "remove-skill", m.group(1)
+
+    # Plugin install with explicit command: `claude plugins install X`
+    cmd = re.search(r'`(claude\s+plugins\s+install\s+\S+)`', text)
+    if cmd:
+        return "plugin-install", cmd.group(1)
+
+    # Generic plugin update
+    if 'plugin' in tl and any(w in tl for w in ('update', 'upgrade', 'outdated')):
+        return "plugin-update", None
+
+    # Executable shell command in backticks (rm, clean, delete operations)
+    cmd = re.search(r'`(rm\s+[^`]+)`', text)
+    if cmd:
+        return "shell-clean", cmd.group(1)
+
+    # Bootstrap
+    if 'bootstrap' in tl:
+        return "bootstrap", None
+
+    # Constraint review — show the file
+    if 'constraint' in tl:
+        return "show-constraints", None
+
+    # Allowlist / suppress false positive
+    if any(w in tl for w in ('allowlist', 'suppress', 'false positive', 'whitelist')):
+        return "heartbeat", None
+
+    # Stale / staleness
+    if 'stale' in tl or 'staleness' in tl:
+        return "heartbeat", None
+
+    # Integrity hashes / hash comparison
+    if 'hash' in tl or 'integrity' in tl:
+        return "refresh-hashes", None
+
+    # Fallback: any backtick command starting with clu/claude
+    cmd = re.search(r'`((?:clu|claude)\s+[^`]+)`', text)
+    if cmd:
+        return "safe-cmd", cmd.group(1)
+
+    # Default: re-run heartbeat to re-evaluate
+    return "heartbeat", None
+
+
 def extract_recommendations():
     """Extract actionable recommendations from all sources."""
     recs = []
-    # From security report
+    # From security report — extract regardless of status
     report = parse_security_report()
-    if report.get("status") == "issues-found" or report.get("status") == "action-taken":
-        rec_text = report.get("sections", {}).get("Recommendations", "")
-        if rec_text:
-            for line in rec_text.splitlines():
-                line = line.strip().lstrip("- ")
-                if line:
-                    recs.append({
-                        "id": f"sec-{len(recs)}",
-                        "category": "security",
-                        "description": line,
-                        "severity": "high",
-                        "action": None,
-                    })
+    rec_text = report.get("sections", {}).get("Recommendations", "")
+    if rec_text:
+        for line in rec_text.splitlines():
+            line = line.strip()
+            line = re.sub(r'^\d+\.\s*', '', line)  # strip "1. "
+            line = line.lstrip("- ")
+            if line:
+                action, param = infer_recommendation_action(line)
+                recs.append({
+                    "id": f"sec-{len(recs)}",
+                    "category": "security",
+                    "description": line,
+                    "severity": "high",
+                    "action": action,
+                    "action_param": param,
+                })
     # Stale files
     hb = parse_heartbeat_log()
     for sf in hb.get("stale_files", []):
@@ -278,14 +343,135 @@ def validate_project_name(name):
     return name
 
 
-def execute_action(action, project=None):
+def _execute_remove_skill(skill_name):
+    """Find and remove a skill from installed plugins."""
+    if not skill_name or not re.match(r'^[a-zA-Z0-9_-]+$', skill_name):
+        return {"status": "error", "output": f"Invalid skill name: {skill_name}", "exit_code": 1}
+    plugins_dir = Path.home() / ".claude" / "plugins"
+    if not plugins_dir.exists():
+        return {"status": "error", "output": "Plugins directory not found", "exit_code": 1}
+    # Search for skill directories and files matching the name
+    found = []
+    for p in plugins_dir.rglob("*"):
+        if p.is_dir() and p.name == skill_name:
+            found.append(p)
+        elif p.is_file() and p.stem == skill_name and p.suffix == '.md':
+            found.append(p)
+    if not found:
+        return {"status": "error", "output": f"Skill '{skill_name}' not found under {plugins_dir}", "exit_code": 1}
+    removed = []
+    for target in found:
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+            removed.append(str(target))
+        except Exception as e:
+            return {"status": "error", "output": f"Failed to remove {target}: {e}", "exit_code": 1}
+    return {"status": "ok", "output": "Removed:\n" + "\n".join(removed), "exit_code": 0}
+
+
+def _execute_plugin_install(cmd_str):
+    """Run a validated claude plugins install command."""
+    if not cmd_str:
+        return {"status": "error", "output": "No command provided", "exit_code": 1}
+    parts = cmd_str.split()
+    if len(parts) < 4 or parts[0] != 'claude' or parts[1] != 'plugins' or parts[2] != 'install':
+        return {"status": "error", "output": f"Invalid plugin command: {cmd_str}", "exit_code": 1}
+    # Validate plugin spec (no shell metacharacters)
+    plugin_spec = parts[3]
+    if not re.match(r'^[a-zA-Z0-9@_./-]+$', plugin_spec):
+        return {"status": "error", "output": f"Invalid plugin spec: {plugin_spec}", "exit_code": 1}
+    try:
+        result = subprocess.run(
+            parts, capture_output=True, text=True, timeout=300,
+            env={**os.environ, "CLU_HOME": str(AGENT_HOME)},
+        )
+        return {
+            "status": "ok" if result.returncode == 0 else "error",
+            "output": result.stdout + result.stderr,
+            "exit_code": result.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "output": "Plugin install timed out (300s)", "exit_code": -1}
+    except Exception as e:
+        return {"status": "error", "output": str(e), "exit_code": -1}
+
+
+def _execute_safe_cmd(cmd_str):
+    """Run a whitelisted clu/claude command."""
+    if not cmd_str:
+        return {"status": "error", "output": "No command provided", "exit_code": 1}
+    parts = cmd_str.split()
+    if not parts or parts[0] not in ('clu', 'claude'):
+        return {"status": "error", "output": f"Only clu/claude commands allowed: {cmd_str}", "exit_code": 1}
+    # Block dangerous subcommands
+    dangerous = {'rm', 'delete', 'purge', 'reset', 'exec', 'eval'}
+    if any(p in dangerous for p in parts):
+        return {"status": "error", "output": f"Blocked dangerous subcommand in: {cmd_str}", "exit_code": 1}
+    try:
+        result = subprocess.run(
+            parts, capture_output=True, text=True, timeout=300,
+            env={**os.environ, "CLU_HOME": str(AGENT_HOME)},
+        )
+        return {
+            "status": "ok" if result.returncode == 0 else "error",
+            "output": result.stdout + result.stderr,
+            "exit_code": result.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "output": "Command timed out (300s)", "exit_code": -1}
+    except Exception as e:
+        return {"status": "error", "output": str(e), "exit_code": -1}
+
+
+def _execute_shell_clean(cmd_str):
+    """Run a whitelisted rm command for cleanup tasks."""
+    if not cmd_str:
+        return {"status": "error", "output": "No command provided", "exit_code": 1}
+    # Only allow rm commands targeting safe paths
+    expanded = os.path.expanduser(cmd_str.split()[-1]) if cmd_str.split() else ""
+    safe_prefixes = [
+        str(Path.home() / ".claude"),
+        str(Path.home() / ".clu"),
+        "/tmp/clu",
+    ]
+    if not any(expanded.startswith(p) for p in safe_prefixes):
+        return {"status": "error", "output": f"Path not in safe prefix: {expanded}", "exit_code": 1}
+    try:
+        result = subprocess.run(
+            ["bash", "-c", cmd_str], capture_output=True, text=True, timeout=30,
+        )
+        return {
+            "status": "ok" if result.returncode == 0 else "error",
+            "output": result.stdout + result.stderr or "Done.",
+            "exit_code": result.returncode,
+        }
+    except Exception as e:
+        return {"status": "error", "output": str(e), "exit_code": -1}
+
+
+def execute_action(action, param=None):
     """Execute a whitelisted action and return result."""
+    # Parameterized actions with custom handlers
+    if action == "remove-skill":
+        return _execute_remove_skill(param)
+    if action == "plugin-install":
+        return _execute_plugin_install(param)
+    if action == "safe-cmd":
+        return _execute_safe_cmd(param)
+    if action == "shell-clean":
+        return _execute_shell_clean(param)
+
     actions = {
         "heartbeat": lambda: [str(HEARTBEAT_SH)],
-        "check": lambda: [str(LAUNCHER), "check", validate_project_name(project)],
+        "check": lambda: [str(LAUNCHER), "check", validate_project_name(param)],
         "refresh-hashes": lambda: ["rm", "-f", str(AGENT_HOME / ".integrity-hashes")],
         "plugin-update": lambda: ["claude", "plugins", "marketplace", "update"],
         "plugin-list": lambda: ["claude", "plugins", "list"],
+        "bootstrap": lambda: [str(LAUNCHER), "bootstrap"],
+        "show-constraints": lambda: ["cat", str(AGENT_HOME / "constraints.md")],
     }
     if action not in actions:
         return {"status": "error", "output": f"Unknown action: {action}", "exit_code": 1}
@@ -398,12 +584,13 @@ pre {
     display: flex; align-items: flex-start; gap: 10px; padding: 10px;
     border-bottom: 1px solid var(--border);
 }
-.rec-item input[type=checkbox] { margin-top: 4px; }
-.rec-severity { font-size: 11px; font-weight: 600; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; }
+.rec-text { flex: 1; }
+.rec-action-btn { flex-shrink: 0; padding: 3px 10px; font-size: 12px; }
+.rec-severity { font-size: 11px; font-weight: 600; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; flex-shrink: 0; }
 .sev-high { background: rgba(248,81,73,0.15); color: var(--red); }
 .sev-medium { background: rgba(210,153,34,0.15); color: var(--amber); }
 .sev-low { background: rgba(139,148,158,0.15); color: var(--text-dim); }
-.action-bar { display: flex; gap: 8px; padding: 16px 0; align-items: center; }
+.action-bar { display: flex; gap: 8px; padding: 8px 0; align-items: center; flex-wrap: wrap; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .output-area { margin-top: 16px; }
@@ -413,9 +600,30 @@ pre {
 .staleness-ok { color: var(--green); }
 .staleness-warn { color: var(--amber); }
 .staleness-bad { color: var(--red); }
+select {
+    background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+    padding: 6px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center;
+    padding-right: 26px;
+}
+select:hover { background-color: var(--border); }
+select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .section-md h1, .section-md h2 { font-size: 15px; font-weight: 600; margin: 12px 0 6px; }
 .section-md ul { padding-left: 20px; margin: 4px 0; }
 .section-md p { margin: 4px 0; }
+.section-md code, code {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 5px; font-family: var(--mono); font-size: 0.9em;
+}
+.section-md table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+.section-md th { text-align: left; padding: 8px; color: var(--text-dim); border-bottom: 1px solid var(--border); font-weight: 500; }
+.section-md td { padding: 8px; border-bottom: 1px solid var(--border); }
+@media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
 </style>
 </head>
 <body>
@@ -424,7 +632,7 @@ pre {
     <h1><span>clu</span> Dashboard</h1>
     <div class="header-actions">
         <span class="last-refresh" id="lastRefresh">loading...</span>
-        <select id="autoRefresh" title="Auto-refresh interval">
+        <select id="autoRefresh" title="Auto-refresh interval" aria-label="Auto-refresh interval">
             <option value="0">Auto: off</option>
             <option value="30">Auto: 30s</option>
             <option value="60" selected>Auto: 60s</option>
@@ -485,15 +693,21 @@ pre {
         <div class="card">
             <h3>Pending Recommendations</h3>
             <ul class="rec-list" id="rec-list"></ul>
+        </div>
+        <div class="card">
+            <h3>Quick Actions</h3>
             <div class="action-bar">
-                <button class="primary" onclick="submitActions()" id="submitBtn">Execute Selected</button>
-                <button onclick="runAction('refresh-hashes')">Reset Integrity Hashes</button>
-                <button onclick="runAction('plugin-update')">Update Plugin Marketplaces</button>
-                <button onclick="runAction('plugin-list')">List Installed Plugins</button>
+                <button onclick="runAction('heartbeat')" title="Run the full heartbeat maintenance cycle: memory staleness check, security audit, daily log hygiene.">Run Heartbeat</button>
+                <button onclick="runAction('refresh-hashes')" title="Delete cached SHA-256 hashes of core files. Next heartbeat will recompute them — use after intentional file changes to silence tamper warnings.">Reset Integrity Hashes</button>
+                <button onclick="runAction('plugin-update')" title="Fetch latest plugin versions from all configured marketplaces. Does not auto-install — only refreshes the available version index.">Update Plugin Index</button>
+                <button onclick="runAction('plugin-list')" title="Show all currently installed Claude Code plugins with version and source.">List Plugins</button>
             </div>
         </div>
         <div class="card output-area" id="action-output" style="display:none">
-            <h3>Action Output</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>Action Output</h3>
+                <button onclick="document.getElementById('action-output').style.display='none'">Clear</button>
+            </div>
             <pre id="action-output-text"></pre>
         </div>
     </div>
@@ -527,13 +741,34 @@ async function api(endpoint) {
     return r.json();
 }
 
-async function postAction(action, project) {
+async function postAction(action, param) {
     const r = await fetch('/api/action', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action, project})
+        body: JSON.stringify({action, param})
     });
     return r.json();
+}
+
+function runRecAction(btn) {
+    const action = btn.dataset.action;
+    const param = btn.dataset.param || null;
+    runAction(action, param);
+}
+
+function recButtonLabel(action) {
+    const labels = {
+        'remove-skill': 'Remove',
+        'plugin-install': 'Install',
+        'plugin-update': 'Update',
+        'show-constraints': 'View',
+        'heartbeat': 'Run',
+        'refresh-hashes': 'Reset',
+        'bootstrap': 'Run',
+        'safe-cmd': 'Run',
+        'shell-clean': 'Clean',
+    };
+    return labels[action] || 'Fix';
 }
 
 // ── Render Functions ─────────────────────────────────
@@ -636,27 +871,20 @@ function renderProjects(projects) {
 
 function renderRecommendations(recs) {
     const list = document.getElementById('rec-list');
+    const actTab = document.querySelector('[data-panel="actions"]');
     if (!recs.length) {
         list.innerHTML = '<li class="empty">No pending recommendations.</li>';
-        document.getElementById('submitBtn').disabled = true;
+        actTab.textContent = 'Actions';
         return;
     }
-    document.getElementById('submitBtn').disabled = false;
+    actTab.innerHTML = `Actions <span class="badge">${recs.length}</span>`;
     list.innerHTML = recs.map(r => `
-        <li class="rec-item">
-            <input type="checkbox" data-action="${r.action || ''}" data-id="${r.id}">
+        <li class="rec-item" title="${escapeHtml(r.description)}">
             <span class="rec-severity sev-${r.severity}">${r.severity}</span>
-            <span>${escapeHtml(r.description)}</span>
+            <span class="rec-text">${escapeHtml(r.description)}</span>
+            ${r.action ? `<button class="rec-action-btn" data-action="${escapeHtml(r.action)}" data-param="${escapeHtml(r.action_param || '')}" onclick="runRecAction(this)" title="Run: ${escapeHtml(r.action)}">${recButtonLabel(r.action)}</button>` : ''}
         </li>
     `).join('');
-
-    // Update tab badge
-    const actTab = document.querySelector('[data-panel="actions"]');
-    if (recs.length > 0) {
-        actTab.innerHTML = `Actions <span class="badge">${recs.length}</span>`;
-    } else {
-        actTab.textContent = 'Actions';
-    }
 }
 
 function renderIncidents(incidents) {
@@ -694,19 +922,45 @@ function escapeHtml(s) {
 
 function simpleMarkdown(text) {
     if (!text) return '';
-    return escapeHtml(text)
-        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-        .replace(/^\- (.+)$/gm, '<li>$1</li>')
+    const lines = text.split('\n');
+    let html = '';
+    let inTable = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Table row detection
+        if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+            const cells = line.split('|').slice(1, -1).map(c => escapeHtml(c.trim()));
+            // Skip separator rows (|---|---|)
+            if (cells.every(c => /^[-:]+$/.test(c))) continue;
+            if (!inTable) { html += '<table>'; inTable = true; }
+            const isHeader = i + 1 < lines.length && lines[i+1].trim().startsWith('|') &&
+                lines[i+1].split('|').slice(1,-1).every(c => /^[\s-:]+$/.test(c));
+            const tag = isHeader ? 'th' : 'td';
+            html += '<tr>' + cells.map(c => `<${tag}>${inlineMarkdown(c)}</${tag}>`).join('') + '</tr>';
+            continue;
+        }
+        if (inTable) { html += '</table>'; inTable = false; }
+        // Block elements
+        const escaped = escapeHtml(line);
+        if (line.startsWith('### ')) html += `<h3>${inlineMarkdown(escapeHtml(line.slice(4)))}</h3>`;
+        else if (line.startsWith('## ')) html += `<h2>${inlineMarkdown(escapeHtml(line.slice(3)))}</h2>`;
+        else if (line.startsWith('# ')) html += `<h1>${inlineMarkdown(escapeHtml(line.slice(2)))}</h1>`;
+        else if (line.startsWith('- ')) html += `<li>${inlineMarkdown(escapeHtml(line.slice(2)))}</li>`;
+        else html += inlineMarkdown(escaped) + '<br>';
+    }
+    if (inTable) html += '</table>';
+    return html;
+}
+
+function inlineMarkdown(s) {
+    return s
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/`(.+?)`/g, '<code>$1</code>')
-        .replace(/\n/g, '<br>');
+        .replace(/`(.+?)`/g, '<code>$1</code>');
 }
 
 // ── Actions ──────────────────────────────────────────
 
-async function runAction(action, project) {
+async function runAction(action, param) {
     const output = document.getElementById('action-output');
     const text = document.getElementById('action-output-text');
     output.style.display = 'block';
@@ -718,52 +972,27 @@ async function runAction(action, project) {
     document.querySelector('[data-panel="actions"]').classList.add('active');
     document.getElementById('panel-actions').classList.add('active');
 
-    const result = await postAction(action, project);
+    const result = await postAction(action, param);
     text.innerHTML = `<div class="log-line ${result.status === 'ok' ? 'log-ok' : 'log-error'}">[exit: ${result.exit_code}]</div>\n${escapeHtml(result.output)}`;
 
     // Refresh data after action
     setTimeout(refreshAll, 1000);
 }
 
-async function submitActions() {
-    const checked = document.querySelectorAll('#rec-list input:checked');
-    if (!checked.length) { alert('Select at least one recommendation.'); return; }
-    if (!confirm(`Execute ${checked.length} action(s)?`)) return;
-
-    const output = document.getElementById('action-output');
-    const text = document.getElementById('action-output-text');
-    output.style.display = 'block';
-    text.innerHTML = '<span class="spinner"></span> Running...';
-
-    let results = '';
-    for (const cb of checked) {
-        const action = cb.dataset.action;
-        if (action) {
-            const r = await postAction(action);
-            results += `\n[${action}] exit: ${r.exit_code}\n${r.output}\n`;
-        }
-    }
-    text.textContent = results || 'No executable actions in selection.';
-    setTimeout(refreshAll, 1000);
-}
-
 // ── Data Loading ─────────────────────────────────────
 
 async function refreshAll() {
-    try {
-        const [security, heartbeat, projects, recs, incidents] = await Promise.all([
-            api('security'), api('heartbeat'), api('projects'), api('recommendations'), api('incidents'),
-        ]);
-        data = {security, heartbeat, projects, recs, incidents};
-        renderSecurity(security);
-        renderHeartbeat(heartbeat);
-        renderProjects(projects);
-        renderRecommendations(recs);
-        renderIncidents(incidents);
-        document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString();
-    } catch (e) {
-        console.error('Refresh failed:', e);
-    }
+    const safe = async (fn) => { try { return await fn(); } catch(e) { console.error(e); return null; } };
+    const [security, heartbeat, projects, recs, incidents] = await Promise.all([
+        safe(() => api('security')), safe(() => api('heartbeat')), safe(() => api('projects')),
+        safe(() => api('recommendations')), safe(() => api('incidents')),
+    ]);
+    if (security) { data.security = security; renderSecurity(security); }
+    if (heartbeat) { data.heartbeat = heartbeat; renderHeartbeat(heartbeat); }
+    if (projects) { data.projects = projects; renderProjects(projects); }
+    if (recs) { data.recs = recs; renderRecommendations(recs); }
+    if (incidents !== null) { data.incidents = incidents; renderIncidents(incidents); }
+    document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
 
 // ── Init ─────────────────────────────────────────────
@@ -815,8 +1044,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/action":
             action = body.get("action", "")
-            project = body.get("project")
-            result = execute_action(action, project)
+            param = body.get("param") or body.get("project")
+            result = execute_action(action, param)
             self._send_json(result)
         else:
             self._send_json({"error": "not found"}, 404)
