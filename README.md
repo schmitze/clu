@@ -212,6 +212,10 @@ git push -u origin main
 
 To deploy on a new machine: clone + run `install.sh`.
 
+## Documentation
+
+For a comprehensive guide in German covering architecture, memory system, personas, adapters, maintenance, and system transfer, see [`docs/CLU-DOCUMENTATION.md`](docs/CLU-DOCUMENTATION.md).
+
 ## License
 
 MIT
