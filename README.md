@@ -82,6 +82,8 @@ Inspired by [OpenViking](https://github.com/volcengine/OpenViking) and [OpenClaw
 | **Agent** | `shared/agent/` | Skills, workflows, meta-knowledge | Every session |
 | **Project** | `projects/<n>/memory/` | Decisions, architecture, findings, daily logs | Active project only |
 
+User and Agent are both loaded every session — the split is semantic, not technical. **User** is knowledge about *you* (portable if someone else uses clu). **Agent** is knowledge about *how clu works* (portable across users). You could set up clu for a colleague: keep Agent memory, replace User memory. Project memory is the only scope that changes between sessions.
+
 **Three tiers** (how much detail to load):
 
 | Tier | What | When loaded |
@@ -121,7 +123,7 @@ Built-in personas and their profiles:
 | Writer | 7 | 7 | 5 | 6 | 4 | Creative and disciplined communicator |
 | Default | 6 | 6 | 6 | 6 | 4 | Balanced generalist, bias toward action |
 
-The router (`_router.md`) switches between personas dynamically based on what you're doing. Trait scores drive actual behavior — they're not just labels.
+Each project has a `default_persona` in its `project.yaml` — that's the starting point for every session. If `dynamic_personas: true` is set in `config.yaml`, the router (`_router.md`) can switch personas mid-session when your activity changes (e.g. from building to reviewing). Trait scores drive actual behavior — they're not just labels.
 
 **Create custom personas:**
 ```bash

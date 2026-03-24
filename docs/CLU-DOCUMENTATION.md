@@ -279,12 +279,14 @@ User: /exit
 
 ### Dynamisches Switching
 
-Wenn `dynamic_personas: true` in `config.yaml`:
+Jedes Projekt hat eine `default_persona` in `project.yaml` — das ist der Startpunkt jeder Session. Dynamisches Switching ist **optional** und nur aktiv wenn `dynamic_personas: true` in `config.yaml` steht. Dann gilt:
 
-- Agent erkennt Arbeitstyp (Design → Architect, Bug → Implementer, etc.)
+- Agent erkennt Aktivitätswechsel innerhalb der Session (Design → Architect, Bug → Implementer, etc.)
 - Kündigt an: `[→ Reviewer mode (C:9 A:3 N:7)]`
 - Blending möglich: 70% Architect / 30% Reviewer
 - User kann jederzeit überschreiben: „sei direkter" → A−2
+
+Wenn `dynamic_personas: false`, bleibt die Projekt-Persona die gesamte Session über aktiv.
 
 ### Per-Projekt Trait-Overrides
 
@@ -314,6 +316,8 @@ trait_overrides:
 | **User** | `shared/memory/` | Wer du bist, deine Muster, Lessons Learned | Projekt-übergreifend |
 | **Agent** | `shared/agent/` | Wie clu arbeitet, Skills, Workflows | Projekt-übergreifend |
 | **Projekt** | `projects/<n>/memory/` | Entscheidungen, Erkenntnisse, Logs | Pro Projekt |
+
+**Warum User und Agent getrennt?** Beide werden jede Session geladen — die Trennung ist semantisch, nicht technisch. **User** = Wissen über *dich* (Rolle, Präferenzen, Kommunikationsstil). **Agent** = Wissen über *sich selbst* (gelernte Techniken, Trait-Korrekturen, was funktioniert). Der Unterschied wird relevant beim Transfer: Wenn du clu für jemand anderen aufsetzt, nimmst du Agent Memory mit (bewährte Arbeitsweisen), ersetzt aber User Memory (anderer Mensch). Nur **Projekt**-Memory wechselt tatsächlich zwischen Sessions — es wird nur für das aktive Projekt geladen.
 
 ### Drei Tiers (Detail-Level)
 
