@@ -305,6 +305,30 @@ trait_overrides:
 # Generiert: personas/meine-persona.md
 ```
 
+### Trait Learning
+
+Wenn `trait_learning: true` in `config.yaml` (Default), lernen Personas
+aus den Interaktionen mit dem User:
+
+**Explizite Signale:** Wenn der User Verhalten korrigiert ("sei direkter",
+"rede weniger"), wird das sofort als Signal in `shared/agent/meta.md`
+geloggt (nach Bestätigung).
+
+**Implizite Signale:** Am Session-Ende reflektiert der Agent über
+Interaktionsmuster — z.B. ob der User Erklärungen regelmäßig übersprungen
+hat (→ E zu hoch?) oder kreative Vorschläge abgelehnt hat (→ O zu hoch?).
+
+**Aggregation:** Am Session-Start prüft der Agent akkumulierte Signale.
+Bei genug Evidenz (1 explizites oder 3+ implizite Signale) schlägt er
+eine Trait-Anpassung vor. Max ±1 pro Trait pro Zyklus, Cooldown von
+3 Sessions.
+
+**Anpassung:** Bei Bestätigung wird die Persona-Datei direkt geändert.
+Signale werden als `applied` markiert.
+
+Signale werden in `shared/agent/meta.md` unter `## Trait Signals`
+im Format `### SIG-NNN` gespeichert.
+
 ---
 
 ## 6. Das Memory-System
