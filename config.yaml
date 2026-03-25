@@ -46,6 +46,11 @@ prompt_budget_chars: 38000
 # If false, uses the project's default persona only.
 dynamic_personas: true
 
+# Enable trait learning — agent logs behavioral signals and
+# proposes trait adjustments based on accumulated evidence.
+# Requires dynamic_personas: true.
+trait_learning: true
+
 # ── Plugins & MCP servers ───────────────────────────────────────
 # Managed by `clu import` — lists plugins/MCP to restore on a new machine.
 # `clu bootstrap` will offer to install missing ones.
