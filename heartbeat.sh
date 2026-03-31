@@ -30,6 +30,10 @@
 #      - Plugin content audit (SKILL.md injection check)
 #      - Memory file deep review (subtle injection detection)
 #      - Self-healing: redact credentials, quarantine injections
+#   7. Memory compaction (Claude CLI, non-interactive):
+#      - Scan all memory files for size and redundancy
+#      - Summarize overgrown files, remove duplicate entries
+#      - Preserve frontmatter and structure
 # ============================================================
 
 set -euo pipefail
@@ -537,6 +541,102 @@ if command -v claude &>/dev/null; then
     fi
 else
     log "  ⬜ Claude CLI not found — skipping agent-driven audit."
+fi
+
+# ── Task 7: Memory compaction ────────────────────────────────
+
+log "🧹 Checking memory files for compaction..."
+
+# Collect all memory files and their sizes
+MEMORY_FILES=""
+TOTAL_LINES=0
+LARGE_FILES=""
+
+for mf in "$AGENT_HOME"/shared/memory/*.md \
+          "$AGENT_HOME"/shared/agent/*.md; do
+    [[ -f "$mf" ]] || continue
+    lines=$(wc -l < "$mf")
+    TOTAL_LINES=$((TOTAL_LINES + lines))
+    MEMORY_FILES="$MEMORY_FILES
+$mf ($lines lines)"
+    if [[ $lines -gt 100 ]]; then
+        LARGE_FILES="$LARGE_FILES
+$mf ($lines lines)"
+    fi
+done
+
+for project_dir in "${project_dirs[@]}"; do
+    [[ -d "$project_dir" ]] || continue
+    for mf in "$project_dir"/memory/*.md; do
+        [[ -f "$mf" ]] || continue
+        # Skip daily logs — those are append-only
+        [[ "$mf" == */days/* ]] && continue
+        lines=$(wc -l < "$mf")
+        TOTAL_LINES=$((TOTAL_LINES + lines))
+        MEMORY_FILES="$MEMORY_FILES
+$mf ($lines lines)"
+        if [[ $lines -gt 100 ]]; then
+            LARGE_FILES="$LARGE_FILES
+$mf ($lines lines)"
+        fi
+    done
+done
+
+log "  Total memory: ~$TOTAL_LINES lines across all files"
+
+if [[ -z "$LARGE_FILES" ]]; then
+    log "  ✅ No files over 100 lines — compaction not needed."
+else
+    log "  📦 Large files found:$LARGE_FILES"
+    log "  Running agent-driven compaction..."
+
+    if command -v claude &>/dev/null; then
+        COMPACT_PROMPT=$(cat << 'COMPACTEOF'
+# clu Heartbeat — Memory Compaction
+
+You are running as a non-interactive maintenance agent for clu.
+Review the memory files listed below and compact them where needed.
+
+## Rules
+
+1. **Only modify files over 100 lines.** Smaller files are fine.
+2. **Preserve all frontmatter** (the YAML block between `---` markers).
+3. **Preserve the file structure** (section headers, entry format like DEC-001, FND-001, LRN-001).
+4. **Remove redundancy:** If two entries say essentially the same thing, merge them into one.
+5. **Summarize verbose entries:** If an entry has excessive detail that isn't needed for future reference, condense it. Keep the key facts and decisions.
+6. **Never delete entries entirely** — condense them. The entry ID (DEC-001 etc.) must survive.
+7. **Update `entry_count`** in frontmatter if you change the number of entries.
+8. **Update `last_verified`** to today's date for any file you modify.
+9. **Update the `abstract`** in frontmatter if the file content changed significantly.
+10. **Daily logs (`days/*.md`) are read-only** — never modify them.
+11. **Do not invent information.** Only condense what is already there.
+12. Log what you changed to stdout (one line per file: "Compacted <file>: <what changed>").
+
+## Files to review
+
+MEMORY_FILES_PLACEHOLDER
+
+## Large files (prioritize these)
+
+LARGE_FILES_PLACEHOLDER
+COMPACTEOF
+)
+
+        COMPACT_PROMPT="${COMPACT_PROMPT//MEMORY_FILES_PLACEHOLDER/$MEMORY_FILES}"
+        COMPACT_PROMPT="${COMPACT_PROMPT//LARGE_FILES_PLACEHOLDER/$LARGE_FILES}"
+
+        echo "$COMPACT_PROMPT" | claude --dangerously-skip-permissions -p \
+            >> "$AGENT_HOME/heartbeat-agent.log" 2>&1
+        compact_exit=$?
+
+        if [[ $compact_exit -eq 0 ]]; then
+            log "  ✅ Memory compaction complete."
+        else
+            log "  ⚠ Compaction exited with code $compact_exit. Check $AGENT_HOME/heartbeat-agent.log"
+        fi
+    else
+        log "  ⬜ Claude CLI not found — skipping compaction."
+    fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────

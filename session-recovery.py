@@ -35,30 +35,30 @@ def get_last_session(claude_dir: Path) -> Path | None:
     return files[-1] if files else None
 
 
-def get_interrupted_sessions(claude_dir: Path, days_dir: Path) -> list[Path]:
-    """Get all session files that ended without a daily log (interrupted)."""
+def get_last_session_if_interrupted(claude_dir: Path, days_dir: Path) -> Path | None:
+    """Return the last session file if it was interrupted, else None.
+
+    Only the most recent session can be interrupted — earlier ones were
+    either processed by session-recovery on the next launch, or are
+    historical (before session-recovery existed).
+    """
     if not claude_dir.is_dir():
-        return []
+        return None
     files = sorted(claude_dir.glob("*.jsonl"), key=lambda f: f.stat().st_mtime)
-    interrupted = []
-    for f in files:
-        if not session_ended_cleanly(f, days_dir):
-            interrupted.append(f)
-    return interrupted
+    if not files:
+        return None
+    last = files[-1]
+    if session_has_daily_log(last, days_dir):
+        return None
+    return last
 
 
-def session_ended_cleanly(session_file: Path, days_dir: Path) -> bool:
-    """Check if a daily log exists for the session's date."""
-    mtime = datetime.fromtimestamp(session_file.stat().st_mtime, tz=timezone.utc)
+def session_has_daily_log(session_file: Path, days_dir: Path) -> bool:
+    """Check if a daily log exists for the session's date (local time)."""
+    mtime = datetime.fromtimestamp(session_file.stat().st_mtime)
     date_str = mtime.strftime("%Y-%m-%d")
     daily_log = days_dir / f"{date_str}.md"
-    if not daily_log.exists():
-        return False
-
-    # Daily log exists — but was it written AFTER the session ended?
-    # If the session is newer than the daily log, session continued after log.
-    log_mtime = daily_log.stat().st_mtime
-    return log_mtime >= session_file.stat().st_mtime
+    return daily_log.exists()
 
 
 def extract_tail(session_file: Path, max_messages: int = 60) -> list[dict]:
@@ -130,40 +130,27 @@ def extract_tail(session_file: Path, max_messages: int = 60) -> list[dict]:
 
 
 def format_recovery(
-    all_sessions: list[Path], latest_entries: list[dict], days_dir: Path
+    session: Path, entries: list[dict], days_dir: Path
 ) -> str:
-    """Format recovery block for CLAUDE.md with all interrupted sessions."""
+    """Format recovery block for CLAUDE.md for the interrupted session."""
     lines = []
     today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
     daily_log_path = days_dir / f"{today}.md"
 
+    mtime = datetime.fromtimestamp(session.stat().st_mtime, tz=timezone.utc)
+
     lines.append("## Session Recovery (auto-injected)")
     lines.append("")
-
-    if len(all_sessions) == 1:
-        s = all_sessions[0]
-        mtime = datetime.fromtimestamp(s.stat().st_mtime, tz=timezone.utc)
-        lines.append(
-            f"**The previous session (`{s.stem[:8]}`, "
-            f"{mtime:%Y-%m-%d %H:%M} UTC) has no daily log — "
-            f"the end-of-session protocol never ran.**"
-        )
-    else:
-        lines.append(
-            f"**{len(all_sessions)} sessions have no daily log** — "
-            f"the end-of-session protocol never ran:"
-        )
-        lines.append("")
-        for s in all_sessions:
-            mtime = datetime.fromtimestamp(s.stat().st_mtime, tz=timezone.utc)
-            size_kb = s.stat().st_size // 1024
-            lines.append(f"- `{s.stem[:8]}` — {mtime:%Y-%m-%d %H:%M} UTC ({size_kb} KB)")
-
+    lines.append(
+        f"**The previous session (`{session.stem[:8]}`, "
+        f"{mtime:%Y-%m-%d %H:%M} UTC) has no daily log — "
+        f"the end-of-session protocol never ran.**"
+    )
     lines.append("")
-    lines.append("### Conversation tail (last session, ~60 messages)")
+    lines.append("### Conversation tail (~60 messages)")
     lines.append("")
 
-    for entry in latest_entries:
+    for entry in entries:
         role = entry.get("role", "")
         if role == "user":
             text = entry["text"][:500]
@@ -179,11 +166,11 @@ def format_recovery(
     lines.append("")
     lines.append(
         f"1. **Write a daily log** to `{daily_log_path}` summarizing what "
-        f"happened across ALL interrupted sessions listed above. Use the "
-        f"standard daily log format (frontmatter with date/project/personas_used, "
-        f"sections: What happened, Decisions made, Open threads, Next session). "
-        f"Read the session JSONL files if the conversation tail above is not "
-        f"enough context."
+        f"happened in the interrupted session. Use the standard daily log "
+        f"format (frontmatter with date/project/personas_used, sections: "
+        f"What happened, Decisions made, Open threads, Next session). "
+        f"Read the session JSONL file if the conversation tail above is "
+        f"not enough context."
     )
     lines.append(
         "2. **Then** identify where work was interrupted and offer to continue "
@@ -237,18 +224,16 @@ def scan_all_projects(
         if not claude_dir.is_dir():
             continue
 
-        interrupted = get_interrupted_sessions(claude_dir, days_dir)
+        interrupted = get_last_session_if_interrupted(claude_dir, days_dir)
         if interrupted:
-            total_kb = sum(f.stat().st_size for f in interrupted) // 1024
-            latest = interrupted[-1]
             mtime = datetime.fromtimestamp(
-                latest.stat().st_mtime, tz=timezone.utc
+                interrupted.stat().st_mtime, tz=timezone.utc
             )
+            size_kb = interrupted.stat().st_size // 1024
             other_projects.append({
                 "name": project_dir.name,
-                "count": len(interrupted),
                 "latest": mtime,
-                "total_kb": total_kb,
+                "size_kb": size_kb,
                 "repo_path": repo_path,
                 "project_dir": str(project_dir),
             })
@@ -266,9 +251,8 @@ def scan_all_projects(
     lines.append("")
     for p in other_projects:
         lines.append(
-            f"- **{p['name']}**: {p['count']} session(s), "
-            f"latest {p['latest']:%Y-%m-%d %H:%M} UTC, "
-            f"~{p['total_kb']} KB"
+            f"- **{p['name']}**: last session {p['latest']:%Y-%m-%d %H:%M} UTC, "
+            f"~{p['size_kb']} KB"
         )
     lines.append("")
     lines.append(
@@ -308,15 +292,15 @@ def main():
     claude_dir = project_path_to_claude_dir(args.project_path)
     days_dir = Path(args.project_dir) / "memory" / "days"
 
-    # Current project recovery
-    interrupted = get_interrupted_sessions(claude_dir, days_dir)
+    # Current project recovery — only check last session
+    interrupted = get_last_session_if_interrupted(claude_dir, days_dir)
     if interrupted:
-        latest = interrupted[-1]
-        entries = extract_tail(latest, max_messages=args.max_messages)
+        entries = extract_tail(interrupted, max_messages=args.max_messages)
         if entries:
             print(format_recovery(interrupted, entries, days_dir))
 
     # Cross-project scan
+    cross_project = ""
     if args.scan_all:
         clu_home = Path(args.scan_all)
         current_project_name = Path(args.project_dir).name
@@ -328,7 +312,7 @@ def main():
                 print("\n---\n")
             print(cross_project)
 
-    if not interrupted and not (args.scan_all and cross_project):
+    if not interrupted and not cross_project:
         sys.exit(0)
 
 
