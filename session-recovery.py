@@ -35,6 +35,18 @@ def get_last_session(claude_dir: Path) -> Path | None:
     return files[-1] if files else None
 
 
+def get_interrupted_sessions(claude_dir: Path, days_dir: Path) -> list[Path]:
+    """Get all session files that ended without a daily log (interrupted)."""
+    if not claude_dir.is_dir():
+        return []
+    files = sorted(claude_dir.glob("*.jsonl"), key=lambda f: f.stat().st_mtime)
+    interrupted = []
+    for f in files:
+        if not session_ended_cleanly(f, days_dir):
+            interrupted.append(f)
+    return interrupted
+
+
 def session_ended_cleanly(session_file: Path, days_dir: Path) -> bool:
     """Check if a daily log exists for the session's date."""
     mtime = datetime.fromtimestamp(session_file.stat().st_mtime, tz=timezone.utc)
@@ -117,24 +129,41 @@ def extract_tail(session_file: Path, max_messages: int = 60) -> list[dict]:
     return all_entries[-max_messages:]
 
 
-def format_recovery(session_file: Path, entries: list[dict]) -> str:
-    """Format entries as a recovery block for CLAUDE.md."""
+def format_recovery(
+    all_sessions: list[Path], latest_entries: list[dict], days_dir: Path
+) -> str:
+    """Format recovery block for CLAUDE.md with all interrupted sessions."""
     lines = []
-    mtime = datetime.fromtimestamp(session_file.stat().st_mtime, tz=timezone.utc)
+    today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+    daily_log_path = days_dir / f"{today}.md"
 
     lines.append("## Session Recovery (auto-injected)")
     lines.append("")
-    lines.append(
-        f"**The previous session (`{session_file.stem[:8]}`, "
-        f"{mtime:%Y-%m-%d %H:%M} UTC) was interrupted — no end-of-session "
-        f"protocol ran.** The tail of that conversation follows so you can "
-        f"pick up where things left off."
-    )
+
+    if len(all_sessions) == 1:
+        s = all_sessions[0]
+        mtime = datetime.fromtimestamp(s.stat().st_mtime, tz=timezone.utc)
+        lines.append(
+            f"**The previous session (`{s.stem[:8]}`, "
+            f"{mtime:%Y-%m-%d %H:%M} UTC) was interrupted — no end-of-session "
+            f"protocol ran.**"
+        )
+    else:
+        lines.append(
+            f"**{len(all_sessions)} sessions were interrupted** — none ran "
+            f"the end-of-session protocol:"
+        )
+        lines.append("")
+        for s in all_sessions:
+            mtime = datetime.fromtimestamp(s.stat().st_mtime, tz=timezone.utc)
+            size_kb = s.stat().st_size // 1024
+            lines.append(f"- `{s.stem[:8]}` — {mtime:%Y-%m-%d %H:%M} UTC ({size_kb} KB)")
+
     lines.append("")
-    lines.append("### Conversation tail (last ~60 messages)")
+    lines.append("### Conversation tail (last session, ~60 messages)")
     lines.append("")
 
-    for entry in entries:
+    for entry in latest_entries:
         role = entry.get("role", "")
         if role == "user":
             text = entry["text"][:500]
@@ -146,10 +175,19 @@ def format_recovery(session_file: Path, entries: list[dict]) -> str:
             lines.append(f"  `→ {entry['name']}`: {entry['detail']}")
 
     lines.append("")
+    lines.append("### Recovery action (MUST execute before other work)")
+    lines.append("")
     lines.append(
-        "**Action:** Read the above, identify where work was interrupted, "
-        "and offer to continue from that point. Do NOT repeat work that was "
-        "already completed."
+        f"1. **Write a daily log** to `{daily_log_path}` summarizing what "
+        f"happened across ALL interrupted sessions listed above. Use the "
+        f"standard daily log format (frontmatter with date/project/personas_used, "
+        f"sections: What happened, Decisions made, Open threads, Next session). "
+        f"Read the session JSONL files if the conversation tail above is not "
+        f"enough context."
+    )
+    lines.append(
+        "2. **Then** identify where work was interrupted and offer to continue "
+        "from that point. Do NOT repeat work already completed."
     )
 
     return "\n".join(lines)
@@ -179,19 +217,17 @@ def main():
     claude_dir = project_path_to_claude_dir(args.project_path)
     days_dir = Path(args.project_dir) / "memory" / "days"
 
-    session_file = get_last_session(claude_dir)
-    if not session_file:
+    interrupted = get_interrupted_sessions(claude_dir, days_dir)
+    if not interrupted:
         sys.exit(0)
 
-    if session_ended_cleanly(session_file, days_dir):
-        # Clean exit — no recovery needed
-        sys.exit(0)
-
-    entries = extract_tail(session_file, max_messages=args.max_messages)
+    # Extract tail from the most recent interrupted session
+    latest = interrupted[-1]
+    entries = extract_tail(latest, max_messages=args.max_messages)
     if not entries:
         sys.exit(0)
 
-    print(format_recovery(session_file, entries))
+    print(format_recovery(interrupted, entries, days_dir))
 
 
 if __name__ == "__main__":
