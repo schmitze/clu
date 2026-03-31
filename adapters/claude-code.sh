@@ -97,29 +97,47 @@ EOF
 
     cp "$claude_md" "$launch_dir/CLAUDE.md"
 
-    # ── Inject last session digest ───────────────────────────
-    # Gives the agent context from the previous session(s) so it
-    # doesn't start completely blank.
+    # ── Inject session recovery / digest ────────────────────
+    # If the last session was interrupted (no daily log written),
+    # inject a recovery block with the conversation tail.
+    # Otherwise, inject a short digest of recent sessions.
 
-    local digest_script
-    digest_script="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/session-digest.py"
-    if [[ -x "$digest_script" && -n "$launch_dir" ]]; then
-        local digest
-        digest=$(python3 "$digest_script" "$launch_dir" --last 2 --max-chars 300 --format md 2>/dev/null)
-        if [[ -n "$digest" ]]; then
+    local clu_scripts
+    clu_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+    local recovery_script="$clu_scripts/session-recovery.py"
+    local digest_script="$clu_scripts/session-digest.py"
+
+    if [[ -x "$recovery_script" && -n "$launch_dir" && -n "$AGENT_PROJECT_DIR" ]]; then
+        local recovery
+        recovery=$(python3 "$recovery_script" "$launch_dir" \
+            --project-dir "$AGENT_PROJECT_DIR" 2>/dev/null)
+        if [[ -n "$recovery" ]]; then
             cat >> "$launch_dir/CLAUDE.md" << EOF
+
+---
+
+$recovery
+
+For the full transcript, run:
+\`python3 $digest_script $launch_dir --last N --max-chars M\`
+EOF
+            echo "🔄 Injected session recovery context (last session was interrupted)"
+        elif [[ -x "$digest_script" ]]; then
+            # Clean exit — inject short digest instead
+            local digest
+            digest=$(python3 "$digest_script" "$launch_dir" --last 1 --max-chars 300 --format md 2>/dev/null)
+            if [[ -n "$digest" ]]; then
+                cat >> "$launch_dir/CLAUDE.md" << EOF
 
 ---
 
 ## Last Session Digest (auto-injected)
 
-Recent session transcript summaries. Use these to understand what was
-discussed previously. For full details, run:
-\`python3 $digest_script $launch_dir --last N --max-chars M\`
-
 $digest
 EOF
-            echo "📜 Injected last session digest into CLAUDE.md"
+                echo "📜 Injected last session digest into CLAUDE.md"
+            fi
         fi
     fi
 
