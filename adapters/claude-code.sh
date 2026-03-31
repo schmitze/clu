@@ -97,6 +97,32 @@ EOF
 
     cp "$claude_md" "$launch_dir/CLAUDE.md"
 
+    # ── Inject last session digest ───────────────────────────
+    # Gives the agent context from the previous session(s) so it
+    # doesn't start completely blank.
+
+    local digest_script
+    digest_script="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/session-digest.py"
+    if [[ -x "$digest_script" && -n "$launch_dir" ]]; then
+        local digest
+        digest=$(python3 "$digest_script" "$launch_dir" --last 2 --max-chars 300 --format md 2>/dev/null)
+        if [[ -n "$digest" ]]; then
+            cat >> "$launch_dir/CLAUDE.md" << EOF
+
+---
+
+## Last Session Digest (auto-injected)
+
+Recent session transcript summaries. Use these to understand what was
+discussed previously. For full details, run:
+\`python3 $digest_script $launch_dir --last N --max-chars M\`
+
+$digest
+EOF
+            echo "📜 Injected last session digest into CLAUDE.md"
+        fi
+    fi
+
     # ── Cleanup handler ─────────────────────────────────────
     # Ensures CLAUDE.md is restored/removed even on Ctrl+C or crash.
     # Uses global vars because trap can't capture locals from outer scope.
