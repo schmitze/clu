@@ -52,6 +52,9 @@ _copy_framework_files() {
     cp -r "$src/personas/" "$dst/personas/"
     cp -r "$src/templates/" "$dst/templates/"
     cp -r "$src/docs/" "$dst/docs/"
+    cp "$src/session-recovery.py" "$dst/session-recovery.py"
+    cp "$src/session-digest.py" "$dst/session-digest.py"
+    cp "$src/migrate.sh" "$dst/migrate.sh"
     cp "$src/clu-dashboard.service" "$dst/clu-dashboard.service"
     cp "$src/.gitignore" "$dst/.gitignore"
     mkdir -p "$dst/shared"
@@ -73,7 +76,7 @@ else
     cp -r "$SCRIPT_DIR/projects/" "$INSTALL_DIR/projects/"
 fi
 
-chmod +x "$INSTALL_DIR/launcher" "$INSTALL_DIR/bootstrap.sh" "$INSTALL_DIR/heartbeat.sh" "$INSTALL_DIR/import.sh"
+chmod +x "$INSTALL_DIR/launcher" "$INSTALL_DIR/bootstrap.sh" "$INSTALL_DIR/heartbeat.sh" "$INSTALL_DIR/import.sh" "$INSTALL_DIR/session-recovery.py" "$INSTALL_DIR/session-digest.py" "$INSTALL_DIR/migrate.sh"
 
 # ── Create the `clu` symlink/alias ─────────────────────────
 
