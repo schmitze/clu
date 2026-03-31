@@ -145,13 +145,13 @@ def format_recovery(
         mtime = datetime.fromtimestamp(s.stat().st_mtime, tz=timezone.utc)
         lines.append(
             f"**The previous session (`{s.stem[:8]}`, "
-            f"{mtime:%Y-%m-%d %H:%M} UTC) was interrupted — no end-of-session "
-            f"protocol ran.**"
+            f"{mtime:%Y-%m-%d %H:%M} UTC) has no daily log — "
+            f"the end-of-session protocol never ran.**"
         )
     else:
         lines.append(
-            f"**{len(all_sessions)} sessions were interrupted** — none ran "
-            f"the end-of-session protocol:"
+            f"**{len(all_sessions)} sessions have no daily log** — "
+            f"the end-of-session protocol never ran:"
         )
         lines.append("")
         for s in all_sessions:
@@ -193,6 +193,92 @@ def format_recovery(
     return "\n".join(lines)
 
 
+def scan_all_projects(
+    clu_home: Path, max_messages: int = 30, exclude_project: str | None = None
+) -> str:
+    """Scan all clu projects for sessions without daily logs.
+
+    Returns a markdown block listing other projects with unprocessed sessions,
+    or empty string if everything is clean.
+    """
+    projects_dir = clu_home / "projects"
+    if not projects_dir.is_dir():
+        return ""
+
+    other_projects = []
+
+    for project_dir in sorted(projects_dir.iterdir()):
+        if not project_dir.is_dir():
+            continue
+
+        if exclude_project and project_dir.name == exclude_project:
+            continue
+
+        project_yaml = project_dir / "project.yaml"
+        if not project_yaml.exists():
+            continue
+
+        # Read repo_path from project.yaml
+        repo_path = None
+        with open(project_yaml) as f:
+            for line in f:
+                if line.startswith("repo_path:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val and val != "null" and val != "~":
+                        repo_path = os.path.expanduser(val)
+                    break
+
+        if not repo_path:
+            continue
+
+        days_dir = project_dir / "memory" / "days"
+        claude_dir = project_path_to_claude_dir(repo_path)
+
+        if not claude_dir.is_dir():
+            continue
+
+        interrupted = get_interrupted_sessions(claude_dir, days_dir)
+        if interrupted:
+            total_kb = sum(f.stat().st_size for f in interrupted) // 1024
+            latest = interrupted[-1]
+            mtime = datetime.fromtimestamp(
+                latest.stat().st_mtime, tz=timezone.utc
+            )
+            other_projects.append({
+                "name": project_dir.name,
+                "count": len(interrupted),
+                "latest": mtime,
+                "total_kb": total_kb,
+                "repo_path": repo_path,
+                "project_dir": str(project_dir),
+            })
+
+    if not other_projects:
+        return ""
+
+    lines = []
+    lines.append("## Unprocessed Sessions in Other Projects")
+    lines.append("")
+    lines.append(
+        "The following projects have sessions without daily logs "
+        "(memory was never saved):"
+    )
+    lines.append("")
+    for p in other_projects:
+        lines.append(
+            f"- **{p['name']}**: {p['count']} session(s), "
+            f"latest {p['latest']:%Y-%m-%d %H:%M} UTC, "
+            f"~{p['total_kb']} KB"
+        )
+    lines.append("")
+    lines.append(
+        "Consider switching to these projects and running the "
+        "end-of-session protocol, or use `session-recovery.py` to "
+        "extract the session data."
+    )
+    return "\n".join(lines)
+
+
 def main():
     import argparse
 
@@ -211,23 +297,39 @@ def main():
         default=60,
         help="Max messages to extract from tail (default: 60)",
     )
+    parser.add_argument(
+        "--scan-all",
+        metavar="CLU_HOME",
+        help="Also scan all other projects for unprocessed sessions (pass ~/.clu path)",
+    )
 
     args = parser.parse_args()
 
     claude_dir = project_path_to_claude_dir(args.project_path)
     days_dir = Path(args.project_dir) / "memory" / "days"
 
+    # Current project recovery
     interrupted = get_interrupted_sessions(claude_dir, days_dir)
-    if not interrupted:
-        sys.exit(0)
+    if interrupted:
+        latest = interrupted[-1]
+        entries = extract_tail(latest, max_messages=args.max_messages)
+        if entries:
+            print(format_recovery(interrupted, entries, days_dir))
 
-    # Extract tail from the most recent interrupted session
-    latest = interrupted[-1]
-    entries = extract_tail(latest, max_messages=args.max_messages)
-    if not entries:
-        sys.exit(0)
+    # Cross-project scan
+    if args.scan_all:
+        clu_home = Path(args.scan_all)
+        current_project_name = Path(args.project_dir).name
+        cross_project = scan_all_projects(
+            clu_home, exclude_project=current_project_name
+        )
+        if cross_project:
+            if interrupted:
+                print("\n---\n")
+            print(cross_project)
 
-    print(format_recovery(interrupted, entries, days_dir))
+    if not interrupted and not (args.scan_all and cross_project):
+        sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -111,7 +111,8 @@ EOF
     if [[ -x "$recovery_script" && -n "$launch_dir" && -n "$AGENT_PROJECT_DIR" ]]; then
         local recovery
         recovery=$(python3 "$recovery_script" "$launch_dir" \
-            --project-dir "$AGENT_PROJECT_DIR" 2>/dev/null)
+            --project-dir "$AGENT_PROJECT_DIR" \
+            --scan-all "$AGENT_HOME" 2>/dev/null)
         if [[ -n "$recovery" ]]; then
             cat >> "$launch_dir/CLAUDE.md" << EOF
 
