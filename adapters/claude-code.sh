@@ -102,11 +102,8 @@ EOF
     # inject a recovery block with the conversation tail.
     # Otherwise, inject a short digest of recent sessions.
 
-    local clu_scripts
-    clu_scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-    local recovery_script="$clu_scripts/session-recovery.py"
-    local digest_script="$clu_scripts/session-digest.py"
+    local recovery_script="$AGENT_HOME/session-recovery.py"
+    local digest_script="$AGENT_HOME/session-digest.py"
 
     if [[ -x "$recovery_script" && -n "$launch_dir" && -n "$AGENT_PROJECT_DIR" ]]; then
         local recovery
