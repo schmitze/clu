@@ -1,0 +1,10 @@
+[Unit]
+Description=clu Heartbeat — Nightly Maintenance
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.clu/heartbeat.sh
+Environment=CLU_HOME=%h/.clu
+# Give the agent-driven tasks enough time
+TimeoutStartSec=600

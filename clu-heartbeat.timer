@@ -1,0 +1,10 @@
+[Unit]
+Description=clu Heartbeat — Daily at 4am (catches up if missed)
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

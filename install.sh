@@ -56,6 +56,8 @@ _copy_framework_files() {
     cp "$src/session-digest.py" "$dst/session-digest.py"
     cp "$src/migrate.sh" "$dst/migrate.sh"
     cp "$src/clu-dashboard.service" "$dst/clu-dashboard.service"
+    cp "$src/clu-heartbeat.service" "$dst/clu-heartbeat.service"
+    cp "$src/clu-heartbeat.timer" "$dst/clu-heartbeat.timer"
     cp "$src/.gitignore" "$dst/.gitignore"
     mkdir -p "$dst/shared"
     cp "$src/shared/core-prompt.md" "$dst/shared/core-prompt.md"
@@ -137,40 +139,47 @@ check_dep "aider" "Aider CLI (alternative adapter)" "false"
 check_dep "fzf" "Fuzzy project picker" "false"
 check_dep "gum" "Pretty project picker (Charm)" "false"
 
-# ── Heartbeat cron setup ─────────────────────────────────────
-
-CRON_LINE="0 4 * * * $INSTALL_DIR/heartbeat.sh >> $INSTALL_DIR/heartbeat.log 2>&1"
+# ── Heartbeat systemd timer ──────────────────────────────────
 
 echo ""
 echo "🫀 Daily heartbeat"
 echo "   The heartbeat runs maintenance between sessions:"
-echo "   memory staleness checks, daily log hygiene, and a"
-echo "   morning brief with yesterday's open threads."
+echo "   memory staleness checks, daily log hygiene, memory"
+echo "   compaction, and a morning brief with open threads."
+echo "   Uses systemd timer with Persistent=true (catches up"
+echo "   if the machine was off at the scheduled time)."
 echo ""
 
-SETUP_CRON=false
-if command -v crontab &>/dev/null; then
-    read -p "   Set up daily heartbeat at 4am? (y/n)" -n 1 -r
+SETUP_HEARTBEAT=false
+if command -v systemctl &>/dev/null; then
+    read -p "   Set up daily heartbeat at 4am? (y/n) " -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        # Check if already installed
+        mkdir -p "$HOME/.config/systemd/user"
+        cp "$INSTALL_DIR/clu-heartbeat.service" "$HOME/.config/systemd/user/clu-heartbeat.service"
+        cp "$INSTALL_DIR/clu-heartbeat.timer" "$HOME/.config/systemd/user/clu-heartbeat.timer"
+        systemctl --user daemon-reload
+        systemctl --user enable --now clu-heartbeat.timer
+        echo "   ✅ Heartbeat scheduled daily at 4am (persistent)."
+        echo "   Manage with:"
+        echo "     systemctl --user status clu-heartbeat.timer"
+        echo "     systemctl --user list-timers"
+        echo "     journalctl --user -u clu-heartbeat -f"
+        SETUP_HEARTBEAT=true
+
+        # Remove old cron entry if present
         if crontab -l 2>/dev/null | grep -qF "heartbeat.sh"; then
-            echo "   ⚠ Heartbeat cron entry already exists. Skipping."
-        else
-            # Append to existing crontab (preserve existing entries)
-            (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
-            echo "   ✅ Heartbeat scheduled daily at 4am."
-            echo "   View with: crontab -l"
-            echo "   Remove with: crontab -l | grep -v heartbeat.sh | crontab -"
-            SETUP_CRON=true
+            crontab -l 2>/dev/null | grep -v "heartbeat.sh" | crontab -
+            echo "   🔄 Removed old cron-based heartbeat entry."
         fi
     else
-        echo "   Skipped. You can set it up later:"
-        echo "   crontab -e  →  add:  $CRON_LINE"
+        echo "   Skipped. Set up later with:"
+        echo "     cp $INSTALL_DIR/clu-heartbeat.{service,timer} ~/.config/systemd/user/"
+        echo "     systemctl --user daemon-reload && systemctl --user enable --now clu-heartbeat.timer"
     fi
 else
-    echo "   ⬜ crontab not found. Set up manually if desired:"
-    echo "   $CRON_LINE"
+    echo "   ⬜ systemd not available. Use cron instead:"
+    echo "   0 4 * * * $INSTALL_DIR/heartbeat.sh >> $INSTALL_DIR/heartbeat.log 2>&1"
 fi
 
 # ── Dashboard systemd service ────────────────────────────────
