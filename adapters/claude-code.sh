@@ -194,6 +194,25 @@ EOF
     # ── Cleanup ───────────────────────────────────────────────
     _clu_cleanup_claude_md
 
+    # ── Switch detection ────────────────────────────────────
+    # If the agent wrote a switch-target file during the session,
+    # relaunch clu with the target project instead of returning
+    # to the shell.
+
+    local switch_file="/tmp/clu/switch-target"
+    if [[ -f "$switch_file" ]]; then
+        local switch_target
+        switch_target=$(cat "$switch_file")
+        rm -f "$switch_file"
+
+        if [[ -n "$switch_target" ]]; then
+            echo ""
+            echo "🔄 Switching to project: $switch_target"
+            echo ""
+            exec "$AGENT_HOME/launcher" "$switch_target"
+        fi
+    fi
+
     # ── Post-session prompt ───────────────────────────────────
 
     local auto_summarize
@@ -223,6 +242,7 @@ adapter_summarize() {
 _adapter_quick_journal() {
     local session_start="${1:-unknown}"
     local journal_file="$AGENT_PROJECT_DIR/memory/journal.md"
+    mkdir -p "$(dirname "$journal_file")"
 
     echo ""
     echo "Quick session summary (what did you work on?):"
