@@ -531,7 +531,6 @@ if command -v claude &>/dev/null; then
         if [[ "$report_status" == "issues-found" || "$report_status" == "action-taken" ]]; then
             log "  🚨 Agent found security issues! Review: $SECURITY_REPORT"
             # Extract summary for incident log
-            local summary
             summary=$(grep -A2 "^## Summary" "$SECURITY_REPORT" 2>/dev/null | tail -1 | sed 's/"/\\"/g' || echo "See report")
             printf '{"timestamp":"%s","severity":"high","source":"heartbeat-agent","detail":"%s","report":"%s"}\n' \
                 "$TIMESTAMP" "$summary" "$SECURITY_REPORT" \
