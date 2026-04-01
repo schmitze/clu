@@ -291,17 +291,40 @@ def extract_recommendations():
     report = parse_security_report()
     rec_text = report.get("sections", {}).get("Recommendations", "")
     if rec_text:
+        is_table = any(l.strip().startswith("|") for l in rec_text.splitlines()[:3])
         for line in rec_text.splitlines():
             line = line.strip()
-            line = re.sub(r'^\d+\.\s*', '', line)  # strip "1. "
-            line = line.lstrip("- ")
-            if line:
-                action, param = infer_recommendation_action(line)
+            if is_table:
+                if not line.startswith("|"):
+                    continue
+                cells = [c.strip() for c in line.split("|") if c.strip()]
+                if not cells or all(re.match(r"^[\-:]+$", c) for c in cells):
+                    continue
+                first = cells[0].strip("* ")
+                if first.lower() in ("priority", "action", "status", "item"):
+                    continue
+                prio = cells[0].strip("* ").upper()
+                cleaned = cells[1].strip() if len(cells) >= 2 else ""
+                if not cleaned:
+                    continue
+                if "CRITICAL" in prio or "HIGH" in prio:
+                    severity = "high"
+                elif "LOW" in prio or "INFO" in prio:
+                    severity = "low"
+                else:
+                    severity = "medium"
+            else:
+                line = re.sub(r'^\d+\.\s*', '', line)  # strip "1. "
+                line = line.lstrip("- ")
+                cleaned = line
+                severity = "high"
+            if cleaned:
+                action, param = infer_recommendation_action(cleaned)
                 recs.append({
                     "id": f"sec-{len(recs)}",
                     "category": "security",
-                    "description": line,
-                    "severity": "high",
+                    "description": cleaned,
+                    "severity": severity,
                     "action": action,
                     "action_param": param,
                 })
