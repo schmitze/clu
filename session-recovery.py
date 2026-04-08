@@ -61,8 +61,8 @@ def session_has_daily_log(session_file: Path, days_dir: Path) -> bool:
     return daily_log.exists()
 
 
-def extract_tail(session_file: Path, max_messages: int = 60) -> list[dict]:
-    """Extract the last N meaningful messages from a session."""
+def extract_tail(session_file: Path, max_messages: int = 60, max_chars: int = 3000) -> list[dict]:
+    """Extract the last N meaningful messages from a session, capped at max_chars total."""
     all_entries = []
 
     with open(session_file) as f:
@@ -126,7 +126,19 @@ def extract_tail(session_file: Path, max_messages: int = 60) -> list[dict]:
                 elif isinstance(content, str) and content.strip():
                     all_entries.append({"role": "assistant", "text": content.strip()})
 
-    return all_entries[-max_messages:]
+    # Take last N messages, then trim to fit char budget
+    tail = all_entries[-max_messages:]
+    total = 0
+    trimmed = []
+    for entry in reversed(tail):
+        text = entry.get("text", entry.get("detail", ""))
+        entry_len = len(text) + 20  # overhead for role prefix
+        if total + entry_len > max_chars and trimmed:
+            break
+        total += entry_len
+        trimmed.append(entry)
+    trimmed.reverse()
+    return trimmed
 
 
 def format_recovery(
@@ -147,19 +159,19 @@ def format_recovery(
         f"the end-of-session protocol never ran.**"
     )
     lines.append("")
-    lines.append("### Conversation tail (~60 messages)")
+    lines.append(f"### Conversation tail (last ~{len(entries)} messages)")
     lines.append("")
 
     for entry in entries:
         role = entry.get("role", "")
         if role == "user":
-            text = entry["text"][:500]
+            text = entry["text"][:300]
             lines.append(f"**User:** {text}")
         elif role == "assistant":
-            text = entry["text"][:500]
+            text = entry["text"][:200]
             lines.append(f"**Assistant:** {text}")
         elif role == "tool":
-            lines.append(f"  `→ {entry['name']}`: {entry['detail']}")
+            lines.append(f"  `→ {entry['name']}`: {entry['detail'][:80]}")
 
     lines.append("")
     lines.append("### Recovery action (MUST execute before other work)")
@@ -282,6 +294,12 @@ def main():
         help="Max messages to extract from tail (default: 60)",
     )
     parser.add_argument(
+        "--max-chars",
+        type=int,
+        default=3000,
+        help="Max total chars for conversation tail (default: 3000)",
+    )
+    parser.add_argument(
         "--scan-all",
         metavar="CLU_HOME",
         help="Also scan all other projects for unprocessed sessions (pass ~/.clu path)",
@@ -295,7 +313,7 @@ def main():
     # Current project recovery — only check last session
     interrupted = get_last_session_if_interrupted(claude_dir, days_dir)
     if interrupted:
-        entries = extract_tail(interrupted, max_messages=args.max_messages)
+        entries = extract_tail(interrupted, max_messages=args.max_messages, max_chars=args.max_chars)
         if entries:
             print(format_recovery(interrupted, entries, days_dir))
 

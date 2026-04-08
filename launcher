@@ -530,6 +530,9 @@ _enforce_budget() {
 _load_memory_l1() {
     local dir="$1"
     local output=""
+    # Files to load as L0-only (abstract + path, no content inline)
+    local l0_only_files="security-report.md"
+
     for mf in "$dir"/*.md; do
         [[ -f "$mf" ]] || continue
         local mf_basename
@@ -539,9 +542,19 @@ _load_memory_l1() {
         local content_lines
         content_lines=$(grep -cvE '^\s*$|^#|^---|^<|^\[.*\]$|^>\s|{{.*}}' "$mf" 2>/dev/null || echo "0")
         if [[ "$content_lines" -lt 5 ]]; then
-            # Still list it as available, but don't inline content
             output+="### $mf_basename"$'\n'
             output+="**Path:** \`$mf\` *(template — read on demand)*"$'\n\n'
+            continue
+        fi
+
+        # L0-only files: show abstract but don't inline content
+        if [[ " $l0_only_files " == *" $mf_basename "* ]]; then
+            local abstract
+            abstract=$(grep "^abstract:" "$mf" 2>/dev/null | head -1 | sed 's/^abstract:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//')
+            output+="### $mf_basename"$'\n'
+            output+="**Path:** \`$mf\` *(L0 — read on demand for details)*"$'\n'
+            [[ -n "$abstract" ]] && output+="**Abstract:** $abstract"$'\n'
+            output+=$'\n'
             continue
         fi
 

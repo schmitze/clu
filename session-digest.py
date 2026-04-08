@@ -157,8 +157,9 @@ def format_digest(
     session_start: str | None,
     fmt: str,
     max_chars: int,
+    max_total: int = 0,
 ) -> str:
-    """Format the full digest for one session."""
+    """Format the full digest for one session, respecting max_total char budget."""
     lines = []
     sid = session_path.stem[:8]
     ts = session_start or "unknown"
@@ -166,16 +167,20 @@ def format_digest(
         ts = ts[:19].replace("T", " ")
 
     if fmt == "md":
-        lines.append(f"### Session `{sid}` — {ts} UTC")
-        lines.append("")
+        header = f"### Session `{sid}` — {ts} UTC"
     else:
-        lines.append(f"=== Session {sid} — {ts} UTC ===")
-        lines.append("")
+        header = f"=== Session {sid} — {ts} UTC ==="
+    lines.append(header)
+    lines.append("")
 
+    total = len(header) + 2
     for entry in entries:
         formatted = format_entry(entry, fmt, max_chars)
         if formatted:
+            if max_total and total + len(formatted) + 1 > max_total:
+                break
             lines.append(formatted)
+            total += len(formatted) + 1
 
     return "\n".join(lines)
 
@@ -202,6 +207,12 @@ def main():
         help="Output format (default: plain)",
     )
     parser.add_argument(
+        "--max-total",
+        type=int,
+        default=4000,
+        help="Max total output chars (default: 4000, 0=unlimited)",
+    )
+    parser.add_argument(
         "--list", action="store_true", help="Just list available sessions"
     )
 
@@ -218,12 +229,17 @@ def main():
 
     files = get_session_files(claude_dir, last_n=args.last)
 
+    total_output = 0
     for i, session_file in enumerate(files):
         entries, session_start = parse_session(session_file)
         if entries:
-            print(
-                format_digest(session_file, entries, session_start, args.format, args.max_chars)
-            )
+            digest = format_digest(session_file, entries, session_start, args.format, args.max_chars, args.max_total)
+            if args.max_total and total_output + len(digest) > args.max_total and total_output > 0:
+                break
+            print(digest)
+            total_output += len(digest)
+            if args.max_total and total_output >= args.max_total:
+                break
             if i < len(files) - 1:
                 print("\n")
 
