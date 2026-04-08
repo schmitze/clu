@@ -17,13 +17,13 @@
         <mxCell id="4" value="&lt;b&gt;User Memory&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/.clu/shared/memory/&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="35" y="90" width="280" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="5" value="preferences.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Wer ist Mi, Rolle, Tech-Stack&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+        <mxCell id="5" value="preferences.md &lt;font color=&quot;#3b82f6&quot; style=&quot;font-size:10px&quot;&gt;(8 Eintraege, 65 Z.)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Wer ist Mi, Rolle, Tech-Stack&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
           <mxGeometry x="40" y="140" width="270" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="6" value="learnings.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;LRN-001 ff. Cross-project Lessons&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+        <mxCell id="6" value="learnings.md &lt;font color=&quot;#3b82f6&quot; style=&quot;font-size:10px&quot;&gt;(6 LRNs, 63 Z.)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;LRN-001 ff. Cross-project Lessons&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
           <mxGeometry x="40" y="200" width="270" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="7" value="references.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Externe Links, API-Referenzen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+        <mxCell id="7" value="references.md &lt;font color=&quot;#3b82f6&quot; style=&quot;font-size:10px&quot;&gt;(3 Eintraege, 22 Z.)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Externe Links, API-Referenzen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
           <mxGeometry x="40" y="260" width="270" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="8" value="&lt;font color=&quot;#999&quot;&gt;Scope: cross-project, persistent&lt;br&gt;Dynamisch: semi-automatic protocol&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
@@ -37,10 +37,10 @@
         <mxCell id="10" value="&lt;b&gt;Agent Memory&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/.clu/shared/agent/&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="365" y="90" width="280" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="11" value="security-report.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;CVEs, Plugin-Status, Threats&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+        <mxCell id="11" value="security-report.md &lt;font color=&quot;#7c3aed&quot; style=&quot;font-size:10px&quot;&gt;(122 Z.)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;CVEs, Plugin-Status, Threats&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
           <mxGeometry x="370" y="140" width="270" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="12" value="meta.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Trait Signals, Korrekturen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+        <mxCell id="12" value="meta.md &lt;font color=&quot;#7c3aed&quot; style=&quot;font-size:10px&quot;&gt;(18 Z.)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Trait Signals, Korrekturen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
           <mxGeometry x="370" y="200" width="270" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="13" value="&lt;font color=&quot;#999&quot;&gt;Scope: cross-project&lt;br&gt;security-report: Heartbeat (nightly)&lt;br&gt;meta: Trait Learning (in-session)&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
@@ -54,16 +54,16 @@
         <mxCell id="15" value="&lt;b&gt;Project Memory&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/.clu/projects/*/memory/&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="35" y="450" width="280" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="16" value="decisions.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;DEC-NNN + Project Context&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+        <mxCell id="16" value="decisions.md &lt;font color=&quot;#16a34a&quot; style=&quot;font-size:10px&quot;&gt;(2 DECs, 25 Z.)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;DEC-NNN + Project Context&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
           <mxGeometry x="40" y="500" width="270" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="17" value="findings.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;FND-NNN, technische Erkenntnisse&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+        <mxCell id="17" value="findings.md &lt;font color=&quot;#16a34a&quot; style=&quot;font-size:10px&quot;&gt;(pro Projekt)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;FND-NNN, technische Erkenntnisse&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
           <mxGeometry x="40" y="560" width="270" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="18" value="architecture.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;On demand, System-Design&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+        <mxCell id="18" value="architecture.md &lt;font color=&quot;#16a34a&quot; style=&quot;font-size:10px&quot;&gt;(2 Sektionen, 40 Z.)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;On demand, System-Design&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
           <mxGeometry x="40" y="620" width="270" height="50" as="geometry"/>
         </mxCell>
-        <mxCell id="19" value="days/YYYY-MM-DD.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Tageslog, append-only&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+        <mxCell id="19" value="days/YYYY-MM-DD.md &lt;font color=&quot;#16a34a&quot; style=&quot;font-size:10px&quot;&gt;(6 Logs)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Tageslog, append-only&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
           <mxGeometry x="40" y="680" width="270" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="20" value="&lt;font color=&quot;#999&quot;&gt;Scope: per-project, semi-automatic&lt;br&gt;Dynamisch: End-of-Session + in-session&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
@@ -77,7 +77,7 @@
         <mxCell id="22" value="&lt;b&gt;Auto-Memory (Claude Code)&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/.claude/projects/*/memory/&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="365" y="450" width="280" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="23" value="MEMORY.md + *.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Claude Code nativ, kein clu-Zugriff&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+        <mxCell id="23" value="MEMORY.md + *.md &lt;font color=&quot;#b45309&quot; style=&quot;font-size:10px&quot;&gt;(4 Repos, 3-5 files/Repo)&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Claude Code nativ, kein clu-Zugriff&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
           <mxGeometry x="370" y="500" width="270" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="24" value="&lt;font color=&quot;#999&quot;&gt;Launcher erkennt Auto-Memory&lt;br&gt;und ueberspringt L1-Injection (DEC-002)&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
