@@ -365,7 +365,7 @@ def extract_recommendations():
             if cleaned:
                 action, param = infer_recommendation_action(cleaned)
                 recs.append({
-                    "id": f"sec-{len(recs)}",
+                    "id": f"rec-{_stable_id(cleaned)}",
                     "category": "security",
                     "description": cleaned,
                     "severity": severity,
@@ -376,7 +376,7 @@ def extract_recommendations():
     hb = parse_heartbeat_log()
     for sf in hb.get("stale_files", []):
         recs.append({
-            "id": f"stale-{len(recs)}",
+            "id": f"rec-{_stable_id(sf.strip())}",
             "category": "maintenance",
             "description": sf.strip(),
             "severity": "medium",
