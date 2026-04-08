@@ -621,9 +621,35 @@ assemble_context() {
         agent_memory=$(_load_memory_l1 "$AGENT_HOME/shared/agent")
     fi
 
-    # Project memory
+    # Project memory — skip L1 injection if Claude Code Auto-Memory exists
+    # (Auto-Memory is loaded natively by Claude Code, no need to duplicate)
     local project_memory=""
-    project_memory=$(_load_memory_l1 "$project_dir/memory")
+    local auto_memory_path=""
+    if [[ -n "$repo_path" && "$repo_path" != "null" ]]; then
+        local resolved_for_auto="${repo_path/#\~/$HOME}"
+        local auto_memory_dir="$HOME/.claude/projects/$(echo "$resolved_for_auto" | tr '/' '-')/memory"
+        if [[ -f "$auto_memory_dir/MEMORY.md" ]]; then
+            auto_memory_path="$auto_memory_dir"
+            project_memory="*(Auto-Memory active at \`$auto_memory_dir/\` — project memory loaded natively by Claude Code. Only clu-specific entries below.)*"$'\n\n'
+            # Still inject decisions.md and architecture.md (clu-exclusive content)
+            for clu_only in "$project_dir/memory/decisions.md" "$project_dir/memory/architecture.md"; do
+                if [[ -f "$clu_only" ]]; then
+                    local entry_count
+                    entry_count=$(grep "^entry_count:" "$clu_only" 2>/dev/null | head -1 | sed 's/.*entry_count:[[:space:]]*//')
+                    if [[ -n "$entry_count" && "$entry_count" -gt 0 ]]; then
+                        project_memory+="### $(basename "$clu_only")"$'\n'
+                        project_memory+="**Path:** \`$clu_only\`"$'\n'
+                        project_memory+=$(head -50 "$clu_only")
+                        project_memory+=$'\n\n'
+                    fi
+                fi
+            done
+        else
+            project_memory=$(_load_memory_l1 "$project_dir/memory")
+        fi
+    else
+        project_memory=$(_load_memory_l1 "$project_dir/memory")
+    fi
 
     # Resolve repo path
     local resolved_repo="${repo_path/\~/$HOME}"

@@ -245,7 +245,7 @@ def scan_projects():
             "type": meta.get("type", "unknown"),
             "description": meta.get("description", ""),
             "persona": meta.get("persona", "default"),
-            "repo_path": meta.get("repo_path", ""),
+            "repo_path": meta.get("repo_path", "") if isinstance(meta.get("repo_path"), str) else "",
             "memory_count": len(mem_files),
             "stale_count": stale_count,
             "last_activity": last_activity,
@@ -1109,6 +1109,7 @@ function renderIncidents(incidents) {
 
 function escapeHtml(s) {
     if (!s) return '';
+    if (typeof s !== 'string') s = String(s);
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
