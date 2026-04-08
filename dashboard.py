@@ -698,6 +698,22 @@ pre {
 .sev-high { background: rgba(248,81,73,0.15); color: var(--red); }
 .sev-medium { background: rgba(210,153,34,0.15); color: var(--amber); }
 .sev-low { background: rgba(139,148,158,0.15); color: var(--text-dim); }
+.dismiss-btn {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 16px; padding: 2px 6px; line-height: 1; flex-shrink: 0;
+    opacity: 0.5; transition: opacity 0.15s;
+}
+.dismiss-btn:hover { opacity: 1; color: var(--red); }
+.autofixed-badge {
+    display: inline-block; background: rgba(63,185,80,0.15); color: var(--green);
+    font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;
+}
+.show-dismissed-toggle {
+    display: flex; align-items: center; gap: 6px; padding: 8px 0;
+    color: var(--text-dim); font-size: 12px; cursor: pointer;
+}
+.show-dismissed-toggle input { cursor: pointer; }
+.dismissed-item { opacity: 0.4; }
 .action-bar { display: flex; gap: 8px; padding: 8px 0; align-items: center; flex-wrap: wrap; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -793,6 +809,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
                 Persistent log of all security events detected by heartbeat audits.
             </p>
             <div id="incident-list"></div>
+            <label class="show-dismissed-toggle">
+                <input type="checkbox" id="toggle-dismissed-inc" onchange="toggleDismissed(this.checked)">
+                Show dismissed
+            </label>
         </div>
     </div>
 
@@ -801,6 +821,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         <div class="card">
             <h3>Pending Recommendations</h3>
             <ul class="rec-list" id="rec-list"></ul>
+            <label class="show-dismissed-toggle">
+                <input type="checkbox" id="toggle-dismissed" onchange="toggleDismissed(this.checked)">
+                Show dismissed
+            </label>
         </div>
         <div class="card">
             <h3>Quick Actions</h3>
@@ -818,6 +842,10 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
             </div>
             <pre id="action-output-text"></pre>
         </div>
+        <div class="card" id="autofixed-card" style="display:none">
+            <h3>Recently Auto-Fixed</h3>
+            <ul class="rec-list" id="autofixed-list"></ul>
+        </div>
     </div>
 </div>
 
@@ -825,6 +853,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 // ── State ────────────────────────────────────────────
 let refreshTimer = null;
 let data = {};
+let showDismissed = false;
 
 // ── Tab switching ────────────────────────────────────
 document.querySelectorAll('.tab').forEach(tab => {
@@ -985,14 +1014,18 @@ function renderRecommendations(recs) {
         actTab.textContent = 'Actions';
         return;
     }
-    actTab.innerHTML = `Actions <span class="badge">${recs.length}</span>`;
-    list.innerHTML = recs.map(r => `
-        <li class="rec-item" title="${escapeHtml(r.description)}">
+    const active = recs.filter(r => !r._dismissed);
+    actTab.innerHTML = active.length ? `Actions <span class="badge">${active.length}</span>` : 'Actions';
+    list.innerHTML = recs.map(r => {
+        const dimClass = r._dismissed ? ' dismissed-item' : '';
+        return `
+        <li class="rec-item${dimClass}" title="${escapeHtml(r.description)}">
             <span class="rec-severity sev-${r.severity}">${r.severity}</span>
             <span class="rec-text">${escapeHtml(r.description)}</span>
             ${r.action ? `<button class="rec-action-btn" data-action="${escapeHtml(r.action)}" data-param="${escapeHtml(r.action_param || '')}" onclick="runRecAction(this)" title="Run: ${escapeHtml(r.action)}">${recButtonLabel(r.action)}</button>` : ''}
-        </li>
-    `).join('');
+            <button class="dismiss-btn" onclick="dismissItem('${escapeHtml(r.id)}', this)" title="Dismiss">&times;</button>
+        </li>`;
+    }).join('');
 }
 
 function renderIncidents(incidents) {
@@ -1005,17 +1038,20 @@ function renderIncidents(incidents) {
         return;
     }
 
-    incTab.innerHTML = `Incidents <span class="badge">${incidents.length}</span>`;
+    const active = incidents.filter(i => !i._dismissed);
+    incTab.innerHTML = active.length ? `Incidents <span class="badge">${active.length}</span>` : 'Incidents';
 
     el.innerHTML = `<table>
-        <tr><th>Time</th><th>Severity</th><th>Source</th><th>Detail</th></tr>
+        <tr><th>Time</th><th>Severity</th><th>Source</th><th>Detail</th><th></th></tr>
         ${incidents.map(i => {
             const sevCls = i.severity === 'critical' ? 'status-critical' : i.severity === 'high' ? 'status-issues' : 'status-unknown';
-            return `<tr>
+            const dimClass = i._dismissed ? ' dismissed-item' : '';
+            return `<tr class="${dimClass}">
                 <td style="white-space:nowrap">${escapeHtml(i.timestamp || '?')}</td>
                 <td><span class="status-badge ${sevCls}">${escapeHtml(i.severity || '?')}</span></td>
                 <td>${escapeHtml(i.source || '?')}</td>
                 <td>${escapeHtml(i.detail || '')}</td>
+                <td><button class="dismiss-btn" onclick="dismissItem('${escapeHtml(i.id)}', this)" title="Dismiss">&times;</button></td>
             </tr>`;
         }).join('')}
     </table>`;
@@ -1087,19 +1123,56 @@ async function runAction(action, param) {
     setTimeout(refreshAll, 1000);
 }
 
+async function dismissItem(id, el) {
+    await fetch('/api/dismiss', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id})
+    });
+    if (el) el.closest('.rec-item, tr')?.remove();
+    refreshAll();
+}
+
+function toggleDismissed(show) {
+    showDismissed = show;
+    document.getElementById('toggle-dismissed').checked = show;
+    document.getElementById('toggle-dismissed-inc').checked = show;
+    refreshAll();
+}
+
+function renderAutofixed(items) {
+    const card = document.getElementById('autofixed-card');
+    const list = document.getElementById('autofixed-list');
+    if (!items || !items.length) {
+        card.style.display = 'none';
+        return;
+    }
+    card.style.display = 'block';
+    list.innerHTML = items.slice(0, 10).map(f => `
+        <li class="rec-item">
+            <span class="autofixed-badge">auto-fixed</span>
+            <span class="rec-text">${escapeHtml(f.description || f.action)}</span>
+            <span style="color:var(--text-dim); font-size:12px">${escapeHtml(f.at?.slice(0,16) || '')}</span>
+        </li>
+    `).join('');
+}
+
 // ── Data Loading ─────────────────────────────────────
 
 async function refreshAll() {
     const safe = async (fn) => { try { return await fn(); } catch(e) { console.error(e); return null; } };
-    const [security, heartbeat, projects, recs, incidents] = await Promise.all([
+    const qs = showDismissed ? '?show_dismissed=1' : '';
+    const [security, heartbeat, projects, recs, incidents, autofixed] = await Promise.all([
         safe(() => api('security')), safe(() => api('heartbeat')), safe(() => api('projects')),
-        safe(() => api('recommendations')), safe(() => api('incidents')),
+        safe(() => api('recommendations' + qs)), safe(() => api('incidents' + qs)),
+        safe(() => api('autofixed')),
     ]);
     if (security) { data.security = security; renderSecurity(security); }
     if (heartbeat) { data.heartbeat = heartbeat; renderHeartbeat(heartbeat); }
     if (projects) { data.projects = projects; renderProjects(projects); }
     if (recs) { data.recs = recs; renderRecommendations(recs); }
     if (incidents !== null) { data.incidents = incidents; renderIncidents(incidents); }
+    if (autofixed) renderAutofixed(autofixed);
     document.getElementById('lastRefresh').textContent = 'Updated: ' + new Date().toLocaleTimeString();
 }
 
@@ -1135,6 +1208,9 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             show_all = "show_dismissed" in qs
             self._send_json(parse_security_incidents(include_dismissed=show_all))
+        elif path == "/api/autofixed":
+            state = read_state()
+            self._send_json(state.get("autofixed", []))
         elif path == "/api/config":
             self._send_json(get_config())
         elif path == "/api/meta":
