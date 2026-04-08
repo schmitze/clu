@@ -675,6 +675,27 @@ else
     log "  ⚠ Dashboard not reachable on :3141, skipping auto-fix"
 fi
 
+# ── Task 9: Memory repo sync ────────────────────────────────
+
+MEMORY_REPO="$HOME/repos/clu-memory"
+if [[ -d "$MEMORY_REPO/.git" ]]; then
+    log "📤 Syncing memory repo..."
+    if git -C "$MEMORY_REPO" diff --quiet && git -C "$MEMORY_REPO" diff --cached --quiet && \
+       [[ -z "$(git -C "$MEMORY_REPO" ls-files --others --exclude-standard)" ]]; then
+        log "  ✅ No memory changes to sync."
+    else
+        git -C "$MEMORY_REPO" add -A
+        git -C "$MEMORY_REPO" commit -m "heartbeat $(date +%Y-%m-%d %H:%M)" --quiet
+        if git -C "$MEMORY_REPO" push --quiet 2>/dev/null; then
+            log "  ✅ Memory synced to remote."
+        else
+            log "  ⚠ Memory committed locally, push failed (offline?)."
+        fi
+    fi
+else
+    log "  ⬜ Memory repo not found at $MEMORY_REPO, skipping sync."
+fi
+
 # ── Done ──────────────────────────────────────────────────────
 
 log "🫀 Heartbeat complete."
