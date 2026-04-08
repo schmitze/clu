@@ -35,7 +35,7 @@ Explicit signal detection — when the user corrects your behavior mid-session
 a trait signal:
 
 ```
-📝 Trait-Signal erkannt → shared/agent/meta.md
+📝 Trait-Signal erkannt → shared/agent/meta.md (create if missing)
 ┌─────────────────────────────────────
 │ ### SIG-NNN – "[user's words]"
 │ - **Date:** [today]
@@ -169,9 +169,9 @@ personas_used: [list]
    ```
 3. **Wait for confirmation.**
 4. **Write to correct file:**
-   - Project: `decisions.md`, `architecture.md`, `days/YYYY-MM-DD.md`, `journal.md`, `context.md`, `findings.md`, `hypotheses.md`
-   - User: `shared/memory/preferences.md`, `patterns.md`, `learnings.md`
-   - Agent: `shared/agent/skills.md`, `workflows.md`, `meta.md`
+   - Project: `decisions.md` (includes Project Context section), `findings.md`, `architecture.md` (create when needed), `days/YYYY-MM-DD.md`, `journal.md`
+   - User: `shared/memory/preferences.md`, `learnings.md`
+   - Agent: `shared/agent/security-report.md`
 5. **Decision format:** `### DEC-[NNN] – [title]` with Date, Status, Context, Decision, Alternatives, Consequences.
 6. **Finding format:** `### FND-[NNN] – [title]` with Date, Source, Finding, Confidence, Implications.
 7. **Promote to shared** if pattern appears in 3+ projects.

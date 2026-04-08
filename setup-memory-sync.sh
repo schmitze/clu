@@ -104,6 +104,12 @@ merge_dir() {
     while IFS= read -r -d '' file; do
         local rel="${file#$src/}"
         if [[ ! -f "$dst/$rel" ]]; then
+            # Skip empty templates (entry_count: 0, no real content)
+            local ec
+            ec=$(awk '/^entry_count:/{v=$2} /^[0-9]+$/ && prev ~ /entry_count/{v=$0} {prev=$0} END{print v+0}' "$file" 2>/dev/null)
+            if [[ "$ec" == "0" && "$(basename "$file")" != "journal.md" ]]; then
+                continue
+            fi
             mkdir -p "$(dirname "$dst/$rel")"
             cp "$file" "$dst/$rel"
             new_count=$((new_count + 1))

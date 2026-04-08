@@ -1,13 +1,17 @@
 ---
 entry_count: 0
 last_verified: {{DATE}}
-abstract: "Empty — no entries yet."
+abstract: "No decisions yet."
 scope: project
 type: decisions
 ---
-entry_count: 0
 
-# Decisions
+# Decisions — {{PROJECT_NAME}}
+
+## Project Context
+
+<!-- Brief project description: what it is, tech stack, key constraints.
+     This replaces the old context.md — keep it concise. -->
 
 <!-- Architectural Decision Records for this project.
      Entries are proposed by the agent and confirmed by you.
