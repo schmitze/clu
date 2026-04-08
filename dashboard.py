@@ -1196,11 +1196,12 @@ function renderAutofixed(items) {
         return;
     }
     card.style.display = 'block';
-    list.innerHTML = items.slice(0, 10).map(f => `
+    list.innerHTML = items.map(f => `
         <li class="rec-item">
             <span class="autofixed-badge">auto-fixed</span>
             <span class="rec-text">${escapeHtml(f.description || f.action)}</span>
             <span style="color:var(--text-dim); font-size:12px">${escapeHtml(f.at?.slice(0,16) || '')}</span>
+            <button class="dismiss-btn" onclick="dismissItem('autofix-${escapeHtml(f.id)}', this)" title="Dismiss">&times;</button>
         </li>
     `).join('');
 }
@@ -1258,7 +1259,9 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(parse_security_incidents(include_dismissed=show_all))
         elif path == "/api/autofixed":
             state = read_state()
-            self._send_json(state.get("autofixed", []))
+            dismissed = state.get("dismissed", {})
+            items = [f for f in state.get("autofixed", []) if f"autofix-{f.get('id', '')}" not in dismissed]
+            self._send_json(items)
         elif path == "/api/config":
             self._send_json(get_config())
         elif path == "/api/meta":
