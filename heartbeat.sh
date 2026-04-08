@@ -638,6 +638,27 @@ COMPACTEOF
     fi
 fi
 
+# ── Task 8: Auto-fix safe recommendations via dashboard ──────
+
+log "🔧 Auto-fix: checking for safe actions..."
+if curl -sf http://127.0.0.1:3141/api/recommendations > /dev/null 2>&1; then
+    AUTOFIX_RESULT=$(curl -sf -X POST http://127.0.0.1:3141/api/autofix \
+        -H "Content-Type: application/json" -d '{}' 2>/dev/null || echo '{"fixed":[]}')
+    FIXED_COUNT=$(echo "$AUTOFIX_RESULT" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('fixed',[])))" 2>/dev/null || echo "0")
+    if [ "$FIXED_COUNT" -gt 0 ]; then
+        log "  ✅ Auto-fixed $FIXED_COUNT safe action(s)"
+        echo "$AUTOFIX_RESULT" | python3 -c "
+import sys, json
+for f in json.load(sys.stdin).get('fixed', []):
+    print(f'    → {f[\"action\"]}: {f[\"description\"][:80]} [{f[\"result\"]}]')
+" 2>/dev/null | while IFS= read -r line; do log "$line"; done
+    else
+        log "  ✅ No safe actions to auto-fix"
+    fi
+else
+    log "  ⚠ Dashboard not reachable on :3141, skipping auto-fix"
+fi
+
 # ── Done ──────────────────────────────────────────────────────
 
 log "🫀 Heartbeat complete."
