@@ -602,6 +602,52 @@ def execute_action(action, param=None):
         return {"status": "error", "output": str(e), "exit_code": -1}
 
 
+SAFE_AUTOFIX_ACTIONS = {"shell-clean", "refresh-hashes", "remove-skill"}
+
+
+def autofix_safe_actions():
+    """Run safe auto-fixable recommendations and log results.
+
+    Called by heartbeat. Only executes actions in SAFE_AUTOFIX_ACTIONS.
+    Returns list of auto-fix results.
+    """
+    recs = extract_recommendations(include_dismissed=True)
+    state = read_state()
+    results = []
+
+    for r in recs:
+        if r.get("_dismissed"):
+            continue
+        if r.get("action") not in SAFE_AUTOFIX_ACTIONS:
+            continue
+        if r["severity"] not in ("high", "critical"):
+            continue
+
+        result = execute_action(r["action"], r.get("action_param"))
+        entry = {
+            "id": r["id"],
+            "action": r["action"],
+            "description": r["description"],
+            "at": datetime.now().isoformat(),
+            "result": result.get("status", "error"),
+        }
+        results.append(entry)
+
+        # Auto-dismiss on success
+        if result.get("status") == "ok":
+            state["dismissed"][r["id"]] = {
+                "at": datetime.now().isoformat(),
+            }
+
+    # Append to autofixed log
+    state.setdefault("autofixed", [])
+    state["autofixed"].extend(results)
+    # Keep only last 50 entries
+    state["autofixed"] = state["autofixed"][-50:]
+    write_state(state)
+    return results
+
+
 # ── HTML Dashboard ─────────────────────────────────────────────
 
 DASHBOARD_HTML = r"""<!DOCTYPE html>
@@ -1244,6 +1290,9 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 return
             result = dismiss_item(item_id)
             self._send_json(result)
+        elif path == "/api/autofix":
+            results = autofix_safe_actions()
+            self._send_json({"status": "ok", "fixed": results})
         else:
             self._send_json({"error": "not found"}, 404)
 
