@@ -13,6 +13,7 @@ Usage:
     python3 dashboard.py       → direct launch
 """
 
+import hashlib
 import http.server
 import json
 import os
@@ -38,6 +39,7 @@ AGENT_LOG = AGENT_HOME / "heartbeat-agent.log"
 CONFIG_FILE = AGENT_HOME / "config.yaml"
 META_FILE = AGENT_HOME / "shared" / "agent" / "meta.md"
 PROJECTS_DIR = AGENT_HOME / "projects"
+DASHBOARD_STATE = AGENT_HOME / "dashboard-state.json"
 LAUNCHER = AGENT_HOME / "launcher"
 HEARTBEAT_SH = AGENT_HOME / "heartbeat.sh"
 
@@ -96,6 +98,48 @@ def parse_simple_yaml(path):
             v = v.strip('"').strip("'")
             result[k] = v if v else ""
     return result
+
+
+def _stable_id(description):
+    """Generate a stable ID from description text."""
+    return hashlib.sha256(description.encode()).hexdigest()[:12]
+
+
+def read_state():
+    """Read dashboard-state.json, return default if missing/corrupt."""
+    default = {"dismissed": {}, "autofixed": []}
+    if not DASHBOARD_STATE.exists():
+        return default
+    try:
+        return json.loads(DASHBOARD_STATE.read_text())
+    except (json.JSONDecodeError, ValueError):
+        return default
+
+
+def write_state(state):
+    """Write dashboard state atomically."""
+    tmp = DASHBOARD_STATE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, default=str))
+    tmp.rename(DASHBOARD_STATE)
+
+
+def dismiss_item(item_id):
+    """Mark an item as dismissed."""
+    state = read_state()
+    state["dismissed"][item_id] = {
+        "at": datetime.now().isoformat(),
+    }
+    write_state(state)
+    return {"status": "ok", "id": item_id}
+
+
+def _auto_dismiss_cutoff(severity):
+    """Return max age in seconds before auto-dismiss, or None for manual-only."""
+    if severity == "low":
+        return 7 * 86400
+    if severity == "medium":
+        return 30 * 86400
+    return None  # high/critical: manual only
 
 
 def parse_security_report():
