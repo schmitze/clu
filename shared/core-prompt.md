@@ -139,6 +139,19 @@ Adapt to project type: software→code/architecture, research→hypotheses/findi
 
 ---
 
+## Project Switching
+
+When the user wants to switch to a different project:
+
+1. Write the project name to `/tmp/clu/switch-target` (e.g. `echo "fedora" > /tmp/clu/switch-target`)
+2. Tell the user you're switching and end the session
+3. The adapter will detect the file and relaunch clu with the target project
+
+Available projects are listed in workspace mode. In single-project mode,
+the user can name any project from `~/.clu/projects/`.
+
+---
+
 ## Tool / File Conventions
 
 - Project repo path: `{{REPO_PATH}}`

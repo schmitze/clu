@@ -1,0 +1,291 @@
+<mxfile host="app.diagrams.net" modified="2026-04-08" type="device">
+  <diagram name="Memory Lifecycle" id="mem-life">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="2" value="&lt;b&gt;clu Memory Lifecycle&lt;/b&gt;&lt;br&gt;Wann wird was gelesen / geschrieben?" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;" vertex="1" parent="1">
+          <mxGeometry x="420" y="10" width="380" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== SESSION START ===== -->
+        <mxCell id="3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;opacity=30;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="80" width="360" height="520" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="&lt;b style=&quot;font-size:16px&quot;&gt;Session Start&lt;/b&gt;" style="text;html=1;align=left;fontSize=16;fontColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="35" y="90" width="200" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="5" value="Launcher liest config.yaml&lt;br&gt;+ project.yaml" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="125" width="320" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" style="endArrow=block;endFill=1;strokeColor=#6c8ebf;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="170" as="sourcePoint"/>
+            <mxPoint x="200" y="190" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="7" value="L0/L1 Memory laden&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;head -50 pro Datei, Abstracts aus Frontmatter&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="320" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" style="endArrow=block;endFill=1;strokeColor=#6c8ebf;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="240" as="sourcePoint"/>
+            <mxPoint x="200" y="260" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="9" value="Budget pruefen&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;&gt; 39k chars? Fallback auf L0-only&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="260" width="320" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" style="endArrow=block;endFill=1;strokeColor=#6c8ebf;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="310" as="sourcePoint"/>
+            <mxPoint x="200" y="330" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="11" value="Letzte Session&lt;br&gt;interrupted?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="130" y="330" width="140" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- YES branch -->
+        <mxCell id="12" value="ja" style="endArrow=block;endFill=1;strokeColor=#b85450;fontColor=#b85450;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="270" y="370" as="sourcePoint"/>
+            <mxPoint x="350" y="370" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="13" value="&lt;font color=&quot;#b85450&quot;&gt;&lt;b&gt;Recovery injizieren&lt;/b&gt;&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Conversation Tail (max 3k chars)&lt;br&gt;aus Session-JSONL extrahiert&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="40" y="440" width="320" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- NO branch -->
+        <mxCell id="14" value="nein" style="endArrow=block;endFill=1;strokeColor=#82b366;fontColor=#82b366;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="410" as="sourcePoint"/>
+            <mxPoint x="200" y="440" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="15" value="Session Digest injizieren&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Letzte Session kompakt (max 4k chars)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="510" width="320" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="16" value="&lt;b&gt;CLAUDE.md assembled → Launch&lt;/b&gt;" style="text;html=1;align=center;fontSize=13;fontColor=#2563eb;" vertex="1" parent="1">
+          <mxGeometry x="40" y="575" width="320" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== WAEHREND SESSION ===== -->
+        <mxCell id="17" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;opacity=30;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="410" y="80" width="380" height="520" as="geometry"/>
+        </mxCell>
+        <mxCell id="18" value="&lt;b style=&quot;font-size:16px&quot;&gt;Waehrend Session&lt;/b&gt;" style="text;html=1;align=left;fontSize=16;fontColor=#15803d;" vertex="1" parent="1">
+          <mxGeometry x="425" y="90" width="250" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="19" value="&lt;b&gt;Semi-Automatic Protocol&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Agent erkennt Decision / Finding / Op-Knowledge&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="430" y="125" width="340" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="20" style="endArrow=block;endFill=1;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="180" as="sourcePoint"/>
+            <mxPoint x="600" y="200" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="21" value="Agent schlaegt vor:&lt;br&gt;&lt;font face=&quot;monospace&quot;&gt;Save this? (y/n/edit)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="430" y="200" width="340" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="22" style="endArrow=block;endFill=1;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="250" as="sourcePoint"/>
+            <mxPoint x="600" y="270" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="23" value="&lt;b&gt;Schreibt nach:&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#666&quot;&gt;decisions.md | findings.md | architecture.md&lt;br&gt;learnings.md | preferences.md&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="430" y="270" width="340" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="24" value="&lt;b&gt;Trait Learning&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Agent loggt Behaviour-Korrekturen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="430" y="365" width="340" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="25" style="endArrow=block;endFill=1;strokeColor=#9673a6;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="415" as="sourcePoint"/>
+            <mxPoint x="600" y="435" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="26" value="→ meta.md (Trait Signals)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="430" y="435" width="340" height="35" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="27" value="&lt;b&gt;L2 on-demand:&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#666&quot;&gt;Read-Tool oeffnet volle Datei&lt;br&gt;wenn Agent Details braucht&lt;/font&gt;" style="text;html=1;align=left;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="430" y="500" width="340" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== NORMALER EXIT ===== -->
+        <mxCell id="28" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;opacity=30;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="20" y="630" width="360" height="340" as="geometry"/>
+        </mxCell>
+        <mxCell id="29" value="&lt;b style=&quot;font-size:16px&quot;&gt;Normaler Exit (/exit)&lt;/b&gt;" style="text;html=1;align=left;fontSize=16;fontColor=#15803d;" vertex="1" parent="1">
+          <mxGeometry x="35" y="640" width="250" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="30" value="&lt;b&gt;End-of-Session Protocol&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="40" y="675" width="320" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="31" style="endArrow=block;endFill=1;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="710" as="sourcePoint"/>
+            <mxPoint x="200" y="725" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="32" value="Daily Log schreiben (days/)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="725" width="320" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="33" style="endArrow=block;endFill=1;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="760" as="sourcePoint"/>
+            <mxPoint x="200" y="775" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="34" value="Memory Updates vorschlagen + bestaetigen" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="775" width="320" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="35" style="endArrow=block;endFill=1;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="810" as="sourcePoint"/>
+            <mxPoint x="200" y="825" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="36" value="L0 Abstracts updaten + Trait Reflexion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="825" width="320" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="37" value="&lt;font color=&quot;#15803d&quot;&gt;→ Session &quot;clean&quot;&lt;br&gt;Naechster Start: nur Digest, keine Recovery&lt;/font&gt;" style="text;html=1;align=left;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="870" width="320" height="35" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== HARTER ABBRUCH ===== -->
+        <mxCell id="38" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;opacity=25;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="410" y="630" width="380" height="340" as="geometry"/>
+        </mxCell>
+        <mxCell id="39" value="&lt;b style=&quot;font-size:16px&quot;&gt;Harter Abbruch (Ctrl+C)&lt;/b&gt;" style="text;html=1;align=left;fontSize=16;fontColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="425" y="640" width="280" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="40" value="&lt;font color=&quot;#b85450&quot;&gt;&lt;b&gt;Kein End-of-Session!&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="430" y="675" width="340" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="41" style="endArrow=block;endFill=1;strokeColor=#b85450;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="710" as="sourcePoint"/>
+            <mxPoint x="600" y="725" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="42" value="Kein Daily Log geschrieben" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="430" y="725" width="340" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="43" style="endArrow=block;endFill=1;strokeColor=#b85450;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="760" as="sourcePoint"/>
+            <mxPoint x="600" y="775" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="44" value="Session JSONL bleibt erhalten" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="430" y="775" width="340" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="45" style="endArrow=block;endFill=1;strokeColor=#b85450;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="810" as="sourcePoint"/>
+            <mxPoint x="600" y="825" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="46" value="Naechster Start:&lt;br&gt;&lt;font color=&quot;#666&quot;&gt;session-recovery.py erkennt es&lt;br&gt;Agent muss Daily Log nachholen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="430" y="825" width="340" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== HEARTBEAT ===== -->
+        <mxCell id="47" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;opacity=25;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="820" y="80" width="380" height="420" as="geometry"/>
+        </mxCell>
+        <mxCell id="48" value="&lt;b style=&quot;font-size:16px&quot;&gt;Heartbeat (Cron 04:00)&lt;/b&gt;" style="text;html=1;align=left;fontSize=16;fontColor=#b45309;" vertex="1" parent="1">
+          <mxGeometry x="835" y="90" width="280" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="49" value="Memory Staleness Check&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;last_verified &gt; 30d? → Warning&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="840" y="125" width="340" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="50" value="Daily Log Hygiene&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Fehlende Logs, Rollup am Montag&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="840" y="185" width="340" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="51" value="Security Audit (bash + agent)&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;→ security-report.md updaten&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="840" y="245" width="340" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="52" value="Memory Compaction&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Dateien &gt; 100 Zeilen zusammenfassen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="840" y="305" width="340" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="53" value="&lt;b&gt;Git Sync&lt;/b&gt;&lt;br&gt;&lt;font face=&quot;monospace&quot; color=&quot;#666&quot;&gt;git add → commit → push&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#666&quot;&gt;~/repos/clu-memory/&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#36b37e;" vertex="1" parent="1">
+          <mxGeometry x="840" y="370" width="340" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== PROJEKTWECHSEL ===== -->
+        <mxCell id="54" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;opacity=25;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="820" y="530" width="380" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="55" value="&lt;b style=&quot;font-size:16px&quot;&gt;Projektwechsel&lt;/b&gt;" style="text;html=1;align=left;fontSize=16;fontColor=#7c3aed;" vertex="1" parent="1">
+          <mxGeometry x="835" y="540" width="200" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="56" value="Daily Log fuer altes Projekt schreiben" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="840" y="575" width="340" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="57" style="endArrow=block;endFill=1;strokeColor=#9673a6;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1010" y="610" as="sourcePoint"/>
+            <mxPoint x="1010" y="630" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="58" value="Neues Projekt: CLAUDE.md&lt;br&gt;neu assemblieren + laden" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="840" y="630" width="340" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="59" value="&lt;font color=&quot;#666&quot;&gt;Neues L0/L1, neue Persona,&lt;br&gt;neuer Session Digest&lt;/font&gt;" style="text;html=1;align=left;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="840" y="685" width="340" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== LEGENDE ===== -->
+        <mxCell id="60" value="&lt;b&gt;Legende&lt;/b&gt;" style="text;html=1;align=left;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="820" y="760" width="100" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="61" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="820" y="785" width="20" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="62" value="Dynamisch (in-session)" style="text;html=1;align=left;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="845" y="785" width="170" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="63" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="820" y="810" width="20" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="64" value="Periodisch (Heartbeat)" style="text;html=1;align=left;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="845" y="810" width="170" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="65" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="785" width="20" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="66" value="Datenverlust-Risiko" style="text;html=1;align=left;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1045" y="785" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="67" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="810" width="20" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="68" value="Agent-intern" style="text;html=1;align=left;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1045" y="810" width="150" height="20" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,138 @@
+<mxfile host="app.diagrams.net" modified="2026-04-08" type="device">
+  <diagram name="Memory Map" id="mem-map">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="2" value="&lt;b&gt;clu Memory Map&lt;/b&gt;&lt;br&gt;Was wird wo gespeichert?" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=18;" vertex="1" parent="1">
+          <mxGeometry x="340" y="10" width="320" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== USER MEMORY ===== -->
+        <mxCell id="3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;opacity=40;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="20" y="80" width="310" height="340" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="&lt;b&gt;User Memory&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/.clu/shared/memory/&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="35" y="90" width="280" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="preferences.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Wer ist Mi, Rolle, Tech-Stack&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="140" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="learnings.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;LRN-001 ff. Cross-project Lessons&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="references.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Externe Links, API-Referenzen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="260" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" value="&lt;font color=&quot;#999&quot;&gt;Scope: cross-project, persistent&lt;br&gt;Dynamisch: semi-automatic protocol&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="325" width="260" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== AGENT MEMORY ===== -->
+        <mxCell id="9" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;opacity=40;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="350" y="80" width="310" height="340" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" value="&lt;b&gt;Agent Memory&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/.clu/shared/agent/&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="365" y="90" width="280" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="security-report.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;CVEs, Plugin-Status, Threats&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="140" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" value="meta.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Trait Signals, Korrekturen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="200" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="13" value="&lt;font color=&quot;#999&quot;&gt;Scope: cross-project&lt;br&gt;security-report: Heartbeat (nightly)&lt;br&gt;meta: Trait Learning (in-session)&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="370" y="270" width="260" height="45" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== PROJECT MEMORY ===== -->
+        <mxCell id="14" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;opacity=40;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="20" y="440" width="310" height="370" as="geometry"/>
+        </mxCell>
+        <mxCell id="15" value="&lt;b&gt;Project Memory&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/.clu/projects/*/memory/&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="35" y="450" width="280" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="16" value="decisions.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;DEC-NNN + Project Context&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="500" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="17" value="findings.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;FND-NNN, technische Erkenntnisse&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="18" value="architecture.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;On demand, System-Design&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="620" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="19" value="days/YYYY-MM-DD.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Tageslog, append-only&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="680" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="20" value="&lt;font color=&quot;#999&quot;&gt;Scope: per-project, semi-automatic&lt;br&gt;Dynamisch: End-of-Session + in-session&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="745" width="260" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== AUTO-MEMORY ===== -->
+        <mxCell id="21" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;opacity=40;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="350" y="440" width="310" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="22" value="&lt;b&gt;Auto-Memory (Claude Code)&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/.claude/projects/*/memory/&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="365" y="450" width="280" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="23" value="MEMORY.md + *.md&lt;br&gt;&lt;font color=&quot;#666&quot; style=&quot;font-size:11px&quot;&gt;Claude Code nativ, kein clu-Zugriff&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="370" y="500" width="270" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="24" value="&lt;font color=&quot;#999&quot;&gt;Launcher erkennt Auto-Memory&lt;br&gt;und ueberspringt L1-Injection (DEC-002)&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="370" y="560" width="270" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== STATIC CONFIG ===== -->
+        <mxCell id="25" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;opacity=30;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="350" y="630" width="310" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="26" value="&lt;b&gt;Static Config&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/.clu/personas/ + shared/&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="365" y="640" width="280" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="27" value="&lt;font face=&quot;monospace&quot; color=&quot;#666&quot;&gt;core-prompt.md&amp;nbsp; constraints.md&lt;br&gt;personas/*.md&amp;nbsp;&amp;nbsp; config.yaml&lt;br&gt;project.yaml&amp;nbsp;&amp;nbsp;&amp;nbsp; _traits.md&lt;br&gt;_trait-learning.md&lt;/font&gt;" style="text;html=1;align=left;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="370" y="690" width="270" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== GIT SYNC REPO ===== -->
+        <mxCell id="28" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#36b37e;opacity=25;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="700" y="80" width="310" height="730" as="geometry"/>
+        </mxCell>
+        <mxCell id="29" value="&lt;b&gt;Git Sync Repo&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999&quot;&gt;~/repos/clu-memory/ (privat)&lt;/font&gt;" style="text;html=1;align=left;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="715" y="90" width="280" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="30" value="&lt;font face=&quot;monospace&quot;&gt;shared/memory/*&lt;br&gt;shared/agent/*&lt;br&gt;projects/*/memory/*&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#36b37e;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="720" y="150" width="270" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="31" value="&lt;b&gt;Heartbeat Sync (04:00)&lt;/b&gt;&lt;br&gt;&lt;font face=&quot;monospace&quot; color=&quot;#666&quot;&gt;git add -A&lt;br&gt;git commit&lt;br&gt;git push&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="720" y="250" width="270" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="32" value="&lt;b&gt;Multi-Machine&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#666&quot;&gt;setup-memory-sync.sh&lt;br&gt;Laptop 04:00 / mi-geek 04:15&lt;br&gt;Kein Konflikt durch Offset&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="720" y="360" width="270" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== SYMLINK ARROWS ===== -->
+        <mxCell id="33" value="symlink" style="endArrow=block;endFill=1;strokeColor=#6c8ebf;strokeWidth=2;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="200" as="sourcePoint"/>
+            <mxPoint x="700" y="200" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="34" value="symlink" style="endArrow=block;endFill=1;strokeColor=#9673a6;strokeWidth=2;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="660" y="200" as="sourcePoint"/>
+            <mxPoint x="700" y="200" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="35" value="symlink" style="endArrow=block;endFill=1;strokeColor=#82b366;strokeWidth=2;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="600" as="sourcePoint"/>
+            <mxPoint x="700" y="600" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
