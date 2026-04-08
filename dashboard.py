@@ -271,25 +271,27 @@ def parse_security_incidents(include_dismissed=False):
             continue
     # Most recent first
     incidents.reverse()
-    if not include_dismissed:
-        state = read_state()
-        now = time.time()
-        filtered = []
-        for inc in incidents:
-            if inc["id"] in state["dismissed"]:
-                continue
-            sev = inc.get("severity", "medium")
-            cutoff = _auto_dismiss_cutoff(sev)
-            if cutoff and inc.get("timestamp"):
-                try:
-                    inc_ts = datetime.fromisoformat(inc["timestamp"]).timestamp()
-                    if now - inc_ts > cutoff:
-                        continue
-                except (ValueError, TypeError):
-                    pass
-            filtered.append(inc)
-        incidents = filtered
-    return incidents
+    state = read_state()
+    now = time.time()
+    filtered = []
+    for inc in incidents:
+        is_dismissed = inc["id"] in state["dismissed"]
+        sev = inc.get("severity", "medium")
+        cutoff = _auto_dismiss_cutoff(sev)
+        is_auto_dismissed = False
+        if cutoff and inc.get("timestamp"):
+            try:
+                inc_ts = datetime.fromisoformat(inc["timestamp"]).timestamp()
+                is_auto_dismissed = now - inc_ts > cutoff
+            except (ValueError, TypeError):
+                pass
+        if is_dismissed or is_auto_dismissed:
+            if include_dismissed:
+                inc["_dismissed"] = True
+                filtered.append(inc)
+            continue
+        filtered.append(inc)
+    return filtered
 
 
 def infer_recommendation_action(text):
@@ -409,19 +411,19 @@ def extract_recommendations(include_dismissed=False):
             "action": "heartbeat",
             "_created": time.time(),
         })
-    if include_dismissed:
-        return recs
     # Filter dismissed and auto-dismissed items
     state = read_state()
     now = time.time()
     filtered = []
     for r in recs:
-        if r["id"] in state["dismissed"]:
-            continue
+        is_dismissed = r["id"] in state["dismissed"]
         cutoff = _auto_dismiss_cutoff(r["severity"])
-        if cutoff and r.get("_created"):
-            if now - r["_created"] > cutoff:
-                continue
+        is_auto_dismissed = bool(cutoff and r.get("_created") and now - r["_created"] > cutoff)
+        if is_dismissed or is_auto_dismissed:
+            if include_dismissed:
+                r["_dismissed"] = True
+                filtered.append(r)
+            continue
         filtered.append(r)
     return filtered
 
