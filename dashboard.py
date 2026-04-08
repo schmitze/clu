@@ -254,7 +254,7 @@ def scan_projects():
     return projects
 
 
-def parse_security_incidents():
+def parse_security_incidents(include_dismissed=False):
     """Parse the persistent security incident log (JSONL)."""
     if not SECURITY_INCIDENTS.exists():
         return []
@@ -264,11 +264,31 @@ def parse_security_incidents():
         if not line:
             continue
         try:
-            incidents.append(json.loads(line))
+            inc = json.loads(line)
+            inc.setdefault("id", f"inc-{_stable_id(inc.get('timestamp', '') + inc.get('detail', ''))}")
+            incidents.append(inc)
         except json.JSONDecodeError:
             continue
     # Most recent first
     incidents.reverse()
+    if not include_dismissed:
+        state = read_state()
+        now = time.time()
+        filtered = []
+        for inc in incidents:
+            if inc["id"] in state["dismissed"]:
+                continue
+            sev = inc.get("severity", "medium")
+            cutoff = _auto_dismiss_cutoff(sev)
+            if cutoff and inc.get("timestamp"):
+                try:
+                    inc_ts = datetime.fromisoformat(inc["timestamp"]).timestamp()
+                    if now - inc_ts > cutoff:
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            filtered.append(inc)
+        incidents = filtered
     return incidents
 
 
@@ -328,11 +348,16 @@ def infer_recommendation_action(text):
     return "heartbeat", None
 
 
-def extract_recommendations():
+def extract_recommendations(include_dismissed=False):
     """Extract actionable recommendations from all sources."""
     recs = []
     # From security report — extract regardless of status
     report = parse_security_report()
+    report_date = report.get("date", "")
+    try:
+        created_ts = datetime.strptime(report_date, "%Y-%m-%d").timestamp()
+    except (ValueError, TypeError):
+        created_ts = time.time()
     rec_text = report.get("sections", {}).get("Recommendations", "")
     if rec_text:
         is_table = any(l.strip().startswith("|") for l in rec_text.splitlines()[:3])
@@ -371,6 +396,7 @@ def extract_recommendations():
                     "severity": severity,
                     "action": action,
                     "action_param": param,
+                    "_created": created_ts,
                 })
     # Stale files
     hb = parse_heartbeat_log()
@@ -381,8 +407,23 @@ def extract_recommendations():
             "description": sf.strip(),
             "severity": "medium",
             "action": "heartbeat",
+            "_created": time.time(),
         })
-    return recs
+    if include_dismissed:
+        return recs
+    # Filter dismissed and auto-dismissed items
+    state = read_state()
+    now = time.time()
+    filtered = []
+    for r in recs:
+        if r["id"] in state["dismissed"]:
+            continue
+        cutoff = _auto_dismiss_cutoff(r["severity"])
+        if cutoff and r.get("_created"):
+            if now - r["_created"] > cutoff:
+                continue
+        filtered.append(r)
+    return filtered
 
 
 def get_config():
@@ -1087,9 +1128,13 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/projects":
             self._send_json(scan_projects())
         elif path == "/api/recommendations":
-            self._send_json(extract_recommendations())
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            show_all = "show_dismissed" in qs
+            self._send_json(extract_recommendations(include_dismissed=show_all))
         elif path == "/api/incidents":
-            self._send_json(parse_security_incidents())
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            show_all = "show_dismissed" in qs
+            self._send_json(parse_security_incidents(include_dismissed=show_all))
         elif path == "/api/config":
             self._send_json(get_config())
         elif path == "/api/meta":
@@ -1113,6 +1158,13 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             action = body.get("action", "")
             param = body.get("param") or body.get("project")
             result = execute_action(action, param)
+            self._send_json(result)
+        elif path == "/api/dismiss":
+            item_id = body.get("id", "")
+            if not item_id:
+                self._send_json({"error": "missing id"}, 400)
+                return
+            result = dismiss_item(item_id)
             self._send_json(result)
         else:
             self._send_json({"error": "not found"}, 404)
