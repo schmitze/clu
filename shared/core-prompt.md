@@ -158,7 +158,13 @@ personas_used: [list]
 
 ### Writing memory – semi-automatic protocol:
 
-1. **Detect** decisions, architecture changes, findings, context updates.
+1. **Detect** decisions, architecture changes, findings, context updates,
+   and **operational knowledge** — deploy commands, server access, build
+   processes, environment setup, CI/CD pipelines, database connections.
+   When you learn *how* something is deployed, built, or operated,
+   propose saving it to the Project Context section of `decisions.md`
+   or `architecture.md`. These details get lost between sessions and
+   cost time to re-discover.
 2. **Propose** with formatted entry:
    ```
    📝 Proposed memory update → [target file]
