@@ -346,8 +346,8 @@ def infer_recommendation_action(text):
     if cmd:
         return "safe-cmd", cmd.group(1)
 
-    # Default: re-run heartbeat to re-evaluate
-    return "heartbeat", None
+    # No actionable fix — informational only
+    return None, None
 
 
 def extract_recommendations(include_dismissed=False):
