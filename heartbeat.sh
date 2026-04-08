@@ -224,6 +224,15 @@ done
 log "🔒 Running security audit..."
 
 security_issues=0
+INCIDENT_LOG="$AGENT_HOME/security-incidents.jsonl"
+
+_log_incident() {
+    local severity="$1" source="$2" detail="$3"
+    printf '{"timestamp":"%s","severity":"%s","source":"%s","detail":"%s"}\n' \
+        "$TIMESTAMP" "$severity" "$source" \
+        "$(echo "$detail" | sed 's/"/\\"/g')" \
+        >> "$INCIDENT_LOG"
+}
 
 # --- 5a: Prompt injection scan in memory/persona files ---
 
@@ -239,6 +248,7 @@ _scan_injection() {
             log "     $line"
         done
         security_issues=$((security_issues + 1))
+        _log_incident "critical" "bash-injection-scan" "INJECTION SUSPECT: $file"
     fi
 }
 
@@ -284,6 +294,7 @@ else
             log "     Expected: $expected_hash"
             log "     Current:  $current_hash"
             security_issues=$((security_issues + 1))
+            _log_incident "critical" "bash-integrity" "TAMPERED: $filepath"
         fi
     done < "$HASH_FILE"
 fi
@@ -297,8 +308,21 @@ _scan_credentials() {
         'api[_-]?key["[:space:]:=]+[A-Za-z0-9]{20}|bearer [A-Za-z0-9._-]{20,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|password["[:space:]:=]+[^[:space:]]{8,}|secret["[:space:]:=]+[^[:space:]]{8,}|token["[:space:]:=]+[A-Za-z0-9._-]{20,}|-----BEGIN (RSA |EC )?PRIVATE KEY|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|ntn_[A-Za-z0-9]{20,}' \
         "$file" 2>/dev/null | head -3 || true)
     if [[ -n "$hits" ]]; then
+        # Skip known false positives
+        # - imported sessions (historical transcripts)
+        # - daily logs (session summaries mentioning secret/token as concepts)
+        if [[ "$file" == *"/imported/"* || "$file" == *"/imported-sessions"* || "$file" == *"/days/"* ]]; then
+            return
+        fi
+        # Filter out references to env var names, redacted values, and descriptive text
+        local real_hits
+        real_hits=$(echo "$hits" | grep -vE '\[REDACTED\]|PLACEHOLDER|example\.com|your-.*-here|required\)|required,|_SECRET\b.*required' || true)
+        if [[ -z "$real_hits" ]]; then
+            return
+        fi
         log "  ⚠ CREDENTIAL SUSPECT: $file"
         security_issues=$((security_issues + 1))
+        _log_incident "high" "bash-credential-scan" "CREDENTIAL SUSPECT: $file"
     fi
 }
 
@@ -326,6 +350,7 @@ _check_perms() {
         if [[ "$other" -ge 6 ]]; then
             log "  ⚠ WORLD-WRITABLE: $file (mode $perms)"
             security_issues=$((security_issues + 1))
+            _log_incident "critical" "bash-permissions" "WORLD-WRITABLE: $file (mode $perms)"
         fi
     fi
 }
@@ -345,6 +370,7 @@ if [[ -d "/tmp/clu" ]]; then
     if [[ "$staging_owner" != "$(whoami)" ]]; then
         log "  🚨 STAGING DIR /tmp/clu owned by '$staging_owner' (expected '$(whoami)')"
         security_issues=$((security_issues + 1))
+        _log_incident "critical" "bash-staging" "STAGING DIR /tmp/clu owned by $staging_owner"
     fi
 fi
 
@@ -353,30 +379,20 @@ fi
 if [[ ! -f "$AGENT_HOME/shared/constraints.md" ]]; then
     log "  🚨 constraints.md is MISSING — agent has no guardrails!"
     security_issues=$((security_issues + 1))
+    _log_incident "critical" "bash-constraints" "constraints.md is MISSING"
 elif [[ ! -s "$AGENT_HOME/shared/constraints.md" ]]; then
     log "  🚨 constraints.md is EMPTY — agent has no guardrails!"
     security_issues=$((security_issues + 1))
+    _log_incident "critical" "bash-constraints" "constraints.md is EMPTY"
 fi
 
-# --- Summary & persistent incident log ---
-
-INCIDENT_LOG="$AGENT_HOME/security-incidents.jsonl"
+# --- Summary ---
 
 if [[ $security_issues -eq 0 ]]; then
     log "  ✅ No security issues found."
 else
     log "  🚨 $security_issues security issue(s) found! Review above."
-    # Log each incident to persistent JSONL file
-    # Re-scan to collect details (the log already has them, extract from recent output)
-    grep -E '🚨|INJECTION|TAMPERED|CREDENTIAL|WORLD-WRITABLE|STAGING' "$AGENT_HOME/heartbeat.log" \
-        | tail -"$security_issues" \
-        | while IFS= read -r incident_line; do
-            printf '{"timestamp":"%s","severity":"critical","source":"heartbeat-bash","detail":"%s"}\n' \
-                "$TIMESTAMP" \
-                "$(echo "$incident_line" | sed 's/"/\\"/g' | sed 's/\[.*\] *//')" \
-                >> "$INCIDENT_LOG"
-        done
-    log "  📋 Logged $security_issues incident(s) to security-incidents.jsonl"
+    log "  📋 Incidents logged inline to security-incidents.jsonl"
 fi
 
 # ── Task 6: Agent-driven deep security audit ──────────────
