@@ -818,7 +818,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <div class="tab active" data-panel="security">Security</div>
     <div class="tab" data-panel="heartbeat">Heartbeat</div>
     <div class="tab" data-panel="projects">Projects</div>
-    <div class="tab" data-panel="incidents">Incidents</div>
     <div class="tab" data-panel="actions">Actions</div>
 </div>
 
@@ -847,21 +846,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <!-- Projects Panel -->
     <div class="panel" id="panel-projects">
         <div class="card-grid" id="project-grid"></div>
-    </div>
-
-    <!-- Incidents Panel -->
-    <div class="panel" id="panel-incidents">
-        <div class="card">
-            <h3>Security Incident History</h3>
-            <p style="color:var(--text-dim); font-size:13px; margin-bottom:12px">
-                Persistent log of all security events detected by heartbeat audits.
-            </p>
-            <div id="incident-list"></div>
-            <label class="show-dismissed-toggle">
-                <input type="checkbox" id="toggle-dismissed-inc" onchange="toggleDismissed(this.checked)">
-                Show dismissed
-            </label>
-        </div>
     </div>
 
     <!-- Actions Panel -->
@@ -986,13 +970,17 @@ function renderSecurity(d) {
 
     let detHtml = '';
     for (const [title, content] of Object.entries(d.sections || {})) {
-        if (title === 'Summary') continue;
+        if (title === 'Summary' || title === 'Recommendations') continue;
         detHtml += `<h3 style="margin-top:16px">${title}</h3><div class="section-md">${simpleMarkdown(content)}</div>`;
     }
-    det.innerHTML = detHtml || '<p class="empty">No details available.</p>';
-    det.style.display = detHtml ? 'block' : 'none';
 
-    // Update tab badge
+    // Incidents inline
+    detHtml += '<div id="security-incidents"></div>';
+
+    det.innerHTML = detHtml || '<p class="empty">No details available.</p>';
+    det.style.display = 'block';
+
+    // Update tab badge (incidents may override this later in renderIncidents)
     const secTab = document.querySelector('[data-panel="security"]');
     if (d.status === 'issues-found' || d.status === 'action-taken') {
         secTab.innerHTML = 'Security <span class="badge">!</span>';
@@ -1011,14 +999,12 @@ function renderHeartbeat(d) {
         return;
     }
 
-    const issues = d.security_issues?.length || 0;
     const stale = d.stale_files?.length || 0;
 
     status.innerHTML = `
         <table>
             <tr><td>Last run</td><td><strong>${d.last_run || 'unknown'}</strong></td></tr>
             <tr><td>Stale files</td><td>${stale === 0 ? '<span class="staleness-ok">none</span>' : `<span class="staleness-warn">${stale}</span>`}</td></tr>
-            <tr><td>Security issues</td><td>${issues === 0 ? '<span class="staleness-ok">none</span>' : `<span class="staleness-bad">${issues}</span>`}</td></tr>
         </table>
     `;
 
@@ -1077,19 +1063,25 @@ function renderRecommendations(recs) {
 }
 
 function renderIncidents(incidents) {
-    const el = document.getElementById('incident-list');
-    const incTab = document.querySelector('[data-panel="incidents"]');
+    const el = document.getElementById('security-incidents');
+    if (!el) return;
 
     if (!incidents || !incidents.length) {
-        el.innerHTML = '<p class="empty">No security incidents recorded.</p>';
-        incTab.textContent = 'Incidents';
+        el.innerHTML = '';
         return;
     }
 
     const active = incidents.filter(i => !i._dismissed);
-    incTab.innerHTML = active.length ? `Incidents <span class="badge">${active.length}</span>` : 'Incidents';
 
-    el.innerHTML = `<table>
+    // Update Security tab badge to include incident count
+    const secTab = document.querySelector('[data-panel="security"]');
+    if (active.length) {
+        secTab.innerHTML = `Security <span class="badge">${active.length}</span>`;
+    }
+
+    el.innerHTML = `
+        <h3 style="margin-top:16px">Incident History</h3>
+        <table>
         <tr><th>Time</th><th>Severity</th><th>Source</th><th>Detail</th><th></th></tr>
         ${incidents.map(i => {
             const sevCls = i.severity === 'critical' ? 'status-critical' : i.severity === 'high' ? 'status-issues' : 'status-unknown';
@@ -1102,7 +1094,11 @@ function renderIncidents(incidents) {
                 <td><button class="dismiss-btn" onclick="dismissItem('${escapeHtml(i.id)}', this)" title="Dismiss">&times;</button></td>
             </tr>`;
         }).join('')}
-    </table>`;
+        </table>
+        <label class="show-dismissed-toggle">
+            <input type="checkbox" id="toggle-dismissed-inc" onchange="toggleDismissed(this.checked)">
+            Show dismissed
+        </label>`;
 }
 
 // ── Helpers ──────────────────────────────────────────
@@ -1184,8 +1180,7 @@ async function dismissItem(id, el) {
 
 function toggleDismissed(show) {
     showDismissed = show;
-    document.getElementById('toggle-dismissed').checked = show;
-    document.getElementById('toggle-dismissed-inc').checked = show;
+    document.querySelectorAll('[id^="toggle-dismissed"]').forEach(el => el.checked = show);
     refreshAll();
 }
 
