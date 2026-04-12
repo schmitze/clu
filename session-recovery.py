@@ -2,15 +2,16 @@
 """
 session-recovery.py — Detect interrupted sessions and generate recovery context.
 
-Checks whether the last Claude Code session ended cleanly (daily log exists)
-or was interrupted. On interruption, extracts the tail of the conversation
-to provide continuity context for the next session.
+Tracks processed sessions via days/.sessions (one session ID per line).
+On launch, finds ALL unprocessed sessions and generates recovery context.
+Supports parallel sessions in the same project.
 
 Usage:
     session-recovery.py <project-path> --project-dir <clu-project-dir>
-    session-recovery.py /home/mi/repos/fedora --project-dir /home/mi/.clu/projects/fedora
+    session-recovery.py <project-path> --project-dir <dir> --mark-processed <session-id>
+    session-recovery.py <project-path> --project-dir <dir> --migrate
 
-Output: Markdown block for CLAUDE.md injection, or nothing if session ended cleanly.
+Output: Markdown block for CLAUDE.md injection, or nothing if all sessions are processed.
 """
 
 import json
@@ -20,6 +21,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+# Sessions older than this are ignored (don't flag ancient history)
+MAX_SESSION_AGE_DAYS = 7
+
+
 def project_path_to_claude_dir(project_path: str) -> Path:
     """Convert a project path to the Claude Code session directory."""
     normalized = os.path.normpath(os.path.expanduser(project_path))
@@ -27,38 +32,84 @@ def project_path_to_claude_dir(project_path: str) -> Path:
     return Path.home() / ".claude" / "projects" / encoded
 
 
-def get_last_session(claude_dir: Path) -> Path | None:
-    """Get the most recent session JSONL file."""
-    if not claude_dir.is_dir():
-        return None
-    files = sorted(claude_dir.glob("*.jsonl"), key=lambda f: f.stat().st_mtime)
-    return files[-1] if files else None
+def sessions_file(days_dir: Path) -> Path:
+    """Path to the .sessions tracking file."""
+    return days_dir / ".sessions"
 
 
-def get_last_session_if_interrupted(claude_dir: Path, days_dir: Path) -> Path | None:
-    """Return the last session file if it was interrupted, else None.
+def read_processed_sessions(days_dir: Path) -> set[str]:
+    """Read the set of processed session IDs from .sessions file."""
+    sf = sessions_file(days_dir)
+    if not sf.exists():
+        return set()
+    return {line.strip() for line in sf.read_text().splitlines() if line.strip()}
 
-    Only the most recent session can be interrupted — earlier ones were
-    either processed by session-recovery on the next launch, or are
-    historical (before session-recovery existed).
+
+def mark_session_processed(days_dir: Path, session_id: str) -> None:
+    """Append a session ID to the .sessions tracking file."""
+    days_dir.mkdir(parents=True, exist_ok=True)
+    sf = sessions_file(days_dir)
+    existing = read_processed_sessions(days_dir)
+    if session_id in existing:
+        return
+    with open(sf, "a") as f:
+        f.write(session_id + "\n")
+
+
+def get_unprocessed_sessions(
+    claude_dir: Path, days_dir: Path, max_age_days: int = MAX_SESSION_AGE_DAYS
+) -> list[Path]:
+    """Find all session JSONL files that haven't been processed yet.
+
+    Returns sessions sorted by mtime (oldest first), filtered to recent ones only.
     """
     if not claude_dir.is_dir():
-        return None
-    files = sorted(claude_dir.glob("*.jsonl"), key=lambda f: f.stat().st_mtime)
-    if not files:
-        return None
-    last = files[-1]
-    if session_has_daily_log(last, days_dir):
-        return None
-    return last
+        return []
+
+    processed = read_processed_sessions(days_dir)
+    cutoff = datetime.now().timestamp() - (max_age_days * 86400)
+    unprocessed = []
+
+    for f in claude_dir.glob("*.jsonl"):
+        if f.stat().st_mtime < cutoff:
+            continue
+        if f.stem in processed:
+            continue
+        # Skip tiny sessions (< 1KB — likely just permission-mode entry)
+        if f.stat().st_size < 1024:
+            continue
+        unprocessed.append(f)
+
+    return sorted(unprocessed, key=lambda f: f.stat().st_mtime)
 
 
-def session_has_daily_log(session_file: Path, days_dir: Path) -> bool:
-    """Check if a daily log exists for the session's date (local time)."""
-    mtime = datetime.fromtimestamp(session_file.stat().st_mtime)
-    date_str = mtime.strftime("%Y-%m-%d")
-    daily_log = days_dir / f"{date_str}.md"
-    return daily_log.exists()
+def migrate_from_daily_logs(claude_dir: Path, days_dir: Path) -> int:
+    """One-time migration: mark sessions as processed if a daily log covers their date.
+
+    This ensures old sessions (before .sessions existed) aren't flagged.
+    Returns count of sessions marked.
+    """
+    if not claude_dir.is_dir():
+        return 0
+
+    # Collect dates that have daily logs
+    logged_dates: set[str] = set()
+    if days_dir.is_dir():
+        for f in days_dir.glob("*.md"):
+            # Extract date from filename (YYYY-MM-DD.md or YYYY-MM-DD-*.md)
+            name = f.stem
+            if len(name) >= 10 and name[:4].isdigit():
+                logged_dates.add(name[:10])
+
+    count = 0
+    for f in claude_dir.glob("*.jsonl"):
+        mtime = datetime.fromtimestamp(f.stat().st_mtime)
+        date_str = mtime.strftime("%Y-%m-%d")
+        if date_str in logged_dates:
+            mark_session_processed(days_dir, f.stem)
+            count += 1
+
+    return count
 
 
 def extract_tail(session_file: Path, max_messages: int = 60, max_chars: int = 3000) -> list[dict]:
@@ -142,50 +193,76 @@ def extract_tail(session_file: Path, max_messages: int = 60, max_chars: int = 30
 
 
 def format_recovery(
-    session: Path, entries: list[dict], days_dir: Path
+    sessions: list[Path], tails: dict[str, list[dict]], days_dir: Path
 ) -> str:
-    """Format recovery block for CLAUDE.md for the interrupted session."""
+    """Format recovery block for CLAUDE.md for all unprocessed sessions."""
     lines = []
     today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
     daily_log_path = days_dir / f"{today}.md"
 
-    mtime = datetime.fromtimestamp(session.stat().st_mtime, tz=timezone.utc)
-
     lines.append("## Session Recovery (auto-injected)")
     lines.append("")
-    lines.append(
-        f"**The previous session (`{session.stem[:8]}`, "
-        f"{mtime:%Y-%m-%d %H:%M} UTC) has no daily log — "
-        f"the end-of-session protocol never ran.**"
-    )
-    lines.append("")
-    lines.append(f"### Conversation tail (last ~{len(entries)} messages)")
-    lines.append("")
 
-    for entry in entries:
-        role = entry.get("role", "")
-        if role == "user":
-            text = entry["text"][:300]
-            lines.append(f"**User:** {text}")
-        elif role == "assistant":
-            text = entry["text"][:200]
-            lines.append(f"**Assistant:** {text}")
-        elif role == "tool":
-            lines.append(f"  `→ {entry['name']}`: {entry['detail'][:80]}")
+    if len(sessions) == 1:
+        s = sessions[0]
+        mtime = datetime.fromtimestamp(s.stat().st_mtime, tz=timezone.utc)
+        lines.append(
+            f"**The previous session (`{s.stem[:8]}`, "
+            f"{mtime:%Y-%m-%d %H:%M} UTC) has no daily log — "
+            f"the end-of-session protocol never ran.**"
+        )
+    else:
+        lines.append(
+            f"**{len(sessions)} sessions have no daily log — "
+            f"the end-of-session protocol never ran for these:**"
+        )
+        lines.append("")
+        for s in sessions:
+            mtime = datetime.fromtimestamp(s.stat().st_mtime, tz=timezone.utc)
+            size_kb = s.stat().st_size // 1024
+            lines.append(f"- `{s.stem[:8]}` — {mtime:%Y-%m-%d %H:%M} UTC, ~{size_kb} KB")
+
+    for s in sessions:
+        entries = tails.get(s.stem, [])
+        if not entries:
+            continue
+        mtime = datetime.fromtimestamp(s.stat().st_mtime, tz=timezone.utc)
+        lines.append("")
+        lines.append(f"### Conversation tail — `{s.stem[:8]}` ({mtime:%Y-%m-%d %H:%M} UTC, ~{len(entries)} messages)")
+        lines.append("")
+
+        for entry in entries:
+            role = entry.get("role", "")
+            if role == "user":
+                text = entry["text"][:300]
+                lines.append(f"**User:** {text}")
+            elif role == "assistant":
+                text = entry["text"][:200]
+                lines.append(f"**Assistant:** {text}")
+            elif role == "tool":
+                lines.append(f"  `→ {entry['name']}`: {entry['detail'][:80]}")
 
     lines.append("")
     lines.append("### Recovery action (MUST execute before other work)")
     lines.append("")
     lines.append(
         f"1. **Write a daily log** to `{daily_log_path}` summarizing what "
-        f"happened in the interrupted session. Use the standard daily log "
+        f"happened in the interrupted session(s). Use the standard daily log "
         f"format (frontmatter with date/project/personas_used, sections: "
         f"What happened, Decisions made, Open threads, Next session). "
-        f"Read the session JSONL file if the conversation tail above is "
-        f"not enough context."
+        f"Multiple sessions on the same day can share one daily log — "
+        f"document each session separately within it."
     )
     lines.append(
-        "2. **Then** identify where work was interrupted and offer to continue "
+        "2. **Mark sessions as processed** after writing the daily log:\n"
+        "   ```bash\n"
+        f"   python3 /home/mi/repos/clu/session-recovery.py <project-path> "
+        f"--project-dir <clu-project-dir> --mark-processed <session-id>\n"
+        "   ```\n"
+        "   Run once per session ID listed above."
+    )
+    lines.append(
+        "3. **Then** identify where work was interrupted and offer to continue "
         "from that point. Do NOT repeat work already completed."
     )
 
@@ -193,9 +270,9 @@ def format_recovery(
 
 
 def scan_all_projects(
-    clu_home: Path, max_messages: int = 30, exclude_project: str | None = None
+    clu_home: Path, exclude_project: str | None = None
 ) -> str:
-    """Scan all clu projects for sessions without daily logs.
+    """Scan all clu projects for unprocessed sessions.
 
     Returns a markdown block listing other projects with unprocessed sessions,
     or empty string if everything is clean.
@@ -236,18 +313,20 @@ def scan_all_projects(
         if not claude_dir.is_dir():
             continue
 
-        interrupted = get_last_session_if_interrupted(claude_dir, days_dir)
-        if interrupted:
-            mtime = datetime.fromtimestamp(
-                interrupted.stat().st_mtime, tz=timezone.utc
-            )
-            size_kb = interrupted.stat().st_size // 1024
+        # Auto-migrate on first encounter
+        if not sessions_file(days_dir).exists() and days_dir.is_dir():
+            migrate_from_daily_logs(claude_dir, days_dir)
+
+        unprocessed = get_unprocessed_sessions(claude_dir, days_dir)
+        if unprocessed:
+            latest = max(f.stat().st_mtime for f in unprocessed)
+            latest_dt = datetime.fromtimestamp(latest, tz=timezone.utc)
+            total_kb = sum(f.stat().st_size for f in unprocessed) // 1024
             other_projects.append({
                 "name": project_dir.name,
-                "latest": mtime,
-                "size_kb": size_kb,
-                "repo_path": repo_path,
-                "project_dir": str(project_dir),
+                "count": len(unprocessed),
+                "latest": latest_dt,
+                "total_kb": total_kb,
             })
 
     if not other_projects:
@@ -262,9 +341,10 @@ def scan_all_projects(
     )
     lines.append("")
     for p in other_projects:
+        count_str = f"{p['count']} session{'s' if p['count'] > 1 else ''}"
         lines.append(
-            f"- **{p['name']}**: last session {p['latest']:%Y-%m-%d %H:%M} UTC, "
-            f"~{p['size_kb']} KB"
+            f"- **{p['name']}**: {count_str}, latest {p['latest']:%Y-%m-%d %H:%M} UTC, "
+            f"~{p['total_kb']} KB total"
         )
     lines.append("")
     lines.append(
@@ -304,18 +384,55 @@ def main():
         metavar="CLU_HOME",
         help="Also scan all other projects for unprocessed sessions (pass ~/.clu path)",
     )
+    parser.add_argument(
+        "--mark-processed",
+        metavar="SESSION_ID",
+        help="Mark a session ID as processed (after writing daily log)",
+    )
+    parser.add_argument(
+        "--migrate",
+        action="store_true",
+        help="Migrate: mark sessions covered by existing daily logs as processed",
+    )
 
     args = parser.parse_args()
 
-    claude_dir = project_path_to_claude_dir(args.project_path)
     days_dir = Path(args.project_dir) / "memory" / "days"
+    claude_dir = project_path_to_claude_dir(args.project_path)
 
-    # Current project recovery — only check last session
-    interrupted = get_last_session_if_interrupted(claude_dir, days_dir)
-    if interrupted:
-        entries = extract_tail(interrupted, max_messages=args.max_messages, max_chars=args.max_chars)
-        if entries:
-            print(format_recovery(interrupted, entries, days_dir))
+    # Mark-processed mode
+    if args.mark_processed:
+        mark_session_processed(days_dir, args.mark_processed)
+        print(f"Marked session {args.mark_processed} as processed", file=sys.stderr)
+        sys.exit(0)
+
+    # Migration mode
+    if args.migrate:
+        count = migrate_from_daily_logs(claude_dir, days_dir)
+        print(f"Migrated {count} sessions from daily log dates", file=sys.stderr)
+        sys.exit(0)
+
+    # Auto-migrate on first run (no .sessions file yet)
+    if not sessions_file(days_dir).exists() and days_dir.is_dir():
+        migrate_from_daily_logs(claude_dir, days_dir)
+
+    # Find all unprocessed sessions
+    unprocessed = get_unprocessed_sessions(claude_dir, days_dir)
+    has_recovery = False
+
+    if unprocessed:
+        # Extract tails for each session (budget split across sessions)
+        per_session_chars = max(1000, args.max_chars // len(unprocessed))
+        per_session_msgs = max(20, args.max_messages // len(unprocessed))
+        tails = {}
+        for s in unprocessed:
+            tails[s.stem] = extract_tail(
+                s, max_messages=per_session_msgs, max_chars=per_session_chars
+            )
+        # Only show recovery if at least one session has meaningful content
+        if any(tails.values()):
+            print(format_recovery(unprocessed, tails, days_dir))
+            has_recovery = True
 
     # Cross-project scan
     cross_project = ""
@@ -326,11 +443,11 @@ def main():
             clu_home, exclude_project=current_project_name
         )
         if cross_project:
-            if interrupted:
+            if has_recovery:
                 print("\n---\n")
             print(cross_project)
 
-    if not interrupted and not cross_project:
+    if not has_recovery and not cross_project:
         sys.exit(0)
 
 
