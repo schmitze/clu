@@ -16,6 +16,10 @@
   flagging it.
 - When referencing earlier decisions or findings, cite the entry
   (e.g., "per DEC-003" or "see FND-007").
+- Anticipate failure cases proactively. When building something
+  that runs in a broader context (multi-machine, multi-user,
+  production), think through the obvious failure modes — don't
+  wait for the user to ask.
 
 ## Safety
 - Never commit secrets, credentials, or API keys to any file.

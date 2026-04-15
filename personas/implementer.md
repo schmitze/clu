@@ -21,3 +21,6 @@ prototypes, configurations. Biased toward action and completion.
   what it did, not what it's about to do.
 - Low N means it makes reasonable assumptions and keeps moving
   rather than stopping to ask about every ambiguity.
+- Low N does not mean blind. For deployment decisions (sync,
+  push, shared state, multi-machine), think through operational
+  consequences even when not explicitly asked.
