@@ -680,12 +680,21 @@ fi
 MEMORY_REPO="$HOME/repos/clu-memory"
 if [[ -d "$MEMORY_REPO/.git" ]]; then
     log "📤 Syncing memory repo..."
+    # Pull before commit to avoid non-fast-forward rejections
+    # (both machines may have committed on the same day)
+    if git -C "$MEMORY_REPO" pull --rebase --quiet 2>/dev/null; then
+        log "  ✅ Pulled latest from remote."
+    else
+        log "  ⚠ Pull/rebase failed — merge conflict or offline. Skipping push."
+        log "    Resolve manually: git -C $MEMORY_REPO rebase --abort"
+    fi
+
     if git -C "$MEMORY_REPO" diff --quiet && git -C "$MEMORY_REPO" diff --cached --quiet && \
        [[ -z "$(git -C "$MEMORY_REPO" ls-files --others --exclude-standard)" ]]; then
         log "  ✅ No memory changes to sync."
     else
         git -C "$MEMORY_REPO" add -A
-        git -C "$MEMORY_REPO" commit -m "heartbeat $(date +%Y-%m-%d %H:%M)" --quiet
+        git -C "$MEMORY_REPO" commit -m "heartbeat" --quiet
         if git -C "$MEMORY_REPO" push --quiet 2>/dev/null; then
             log "  ✅ Memory synced to remote."
         else
