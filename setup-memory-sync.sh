@@ -76,6 +76,9 @@ elif [[ "$INIT_MODE" == true ]]; then
 # Runtime state (not memory)
 security-incidents.jsonl
 dashboard-state.json
+shared/agent/security-report.md
+**/days/.sessions
+**/imported-sessions.md
 *.tmp
 *.swp
 *.swo
