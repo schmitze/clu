@@ -471,6 +471,24 @@ for idx in "${SELECTED[@]}"; do
             _sed_i "s|repo_path: null|repo_path: $decoded|" "$target/project.yaml"
             echo "   Repo path: $decoded"
         fi
+
+        # Wire up memory sync if active (shared/memory is a symlink into clu-memory repo)
+        if [[ -L "$AGENT_HOME/shared/memory" ]]; then
+            memory_repo="$(readlink "$AGENT_HOME/shared/memory")"
+            memory_repo="${memory_repo%/shared/memory}"
+            if [[ -d "$memory_repo" ]]; then
+                sync_target="$memory_repo/projects/$name/memory"
+                if [[ -d "$sync_target" ]]; then
+                    # Sync repo already has memory for this project (e.g. from another machine) — use it
+                    rm -rf "$target/memory"
+                else
+                    mkdir -p "$(dirname "$sync_target")"
+                    mv "$target/memory" "$sync_target"
+                fi
+                ln -s "$sync_target" "$target/memory"
+                echo "   Linked memory → $sync_target"
+            fi
+        fi
     else
         echo "   clu project already exists, merging history."
     fi
