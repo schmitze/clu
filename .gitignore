@@ -19,7 +19,7 @@ __pycache__/
 heartbeat.log
 
 # Instance-specific files (generated per-install)
-shared/
+shared/imported/
 
 # Adapter staging directories
 /staging/
