@@ -20,6 +20,7 @@ heartbeat.log
 
 # Instance-specific files (generated per-install)
 shared/imported/
+shared/agent/security-report.md
 
 # Adapter staging directories
 /staging/
