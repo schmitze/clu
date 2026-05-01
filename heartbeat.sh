@@ -531,9 +531,12 @@ AGENT_PROMPT="${AGENT_PROMPT//CLU_HOME_PLACEHOLDER/$AGENT_HOME}"
 AGENT_PROMPT="${AGENT_PROMPT//REPORT_PATH_PLACEHOLDER/$SECURITY_REPORT}"
 
 if command -v claude &>/dev/null; then
-    echo "$AGENT_PROMPT" | claude --dangerously-skip-permissions -p \
+    echo "$AGENT_PROMPT" | timeout 600 claude --dangerously-skip-permissions -p \
         > "$AGENT_HOME/heartbeat-agent.log" 2>&1
     agent_exit=$?
+    if [[ $agent_exit -eq 124 ]]; then
+        log "  ⚠ Agent audit timed out after 10 min."
+    fi
 
     if [[ $agent_exit -eq 0 ]]; then
         log "  ✅ Agent audit complete. Report: $SECURITY_REPORT"
@@ -640,9 +643,12 @@ COMPACTEOF
         COMPACT_PROMPT="${COMPACT_PROMPT//MEMORY_FILES_PLACEHOLDER/$MEMORY_FILES}"
         COMPACT_PROMPT="${COMPACT_PROMPT//LARGE_FILES_PLACEHOLDER/$LARGE_FILES}"
 
-        echo "$COMPACT_PROMPT" | claude --dangerously-skip-permissions -p \
+        echo "$COMPACT_PROMPT" | timeout 600 claude --dangerously-skip-permissions -p \
             >> "$AGENT_HOME/heartbeat-agent.log" 2>&1
         compact_exit=$?
+        if [[ $compact_exit -eq 124 ]]; then
+            log "  ⚠ Memory compaction timed out after 10 min."
+        fi
 
         if [[ $compact_exit -eq 0 ]]; then
             log "  ✅ Memory compaction complete."
@@ -703,6 +709,42 @@ if [[ -d "$MEMORY_REPO/.git" ]]; then
     fi
 else
     log "  ⬜ Memory repo not found at $MEMORY_REPO, skipping sync."
+fi
+
+# ── Task 10: Recall index ────────────────────────────────────
+
+RECALL_BIN="$HOME/repos/clu/tools/recall/recall.py"
+if [[ -x "$RECALL_BIN" ]]; then
+    log "🔎 Reindexing recall (incremental)..."
+    if recall_out=$("$RECALL_BIN" reindex 2>&1); then
+        recall_md_files=$(echo "$recall_out" | awk '/md_files:/ {print $2}')
+        recall_jsonl_files=$(echo "$recall_out" | awk '/jsonl_files:/ {print $2}')
+        log "  ✅ Reindexed: $recall_md_files md files, $recall_jsonl_files jsonl files."
+    else
+        log "  ⚠ Recall reindex failed: $recall_out"
+    fi
+else
+    log "  ⬜ recall.py not found at $RECALL_BIN, skipping."
+fi
+
+# ── Task 11: Curator (autonomous memory writer) ──────────────
+
+CURATOR_BIN="$HOME/repos/clu/tools/curator/curator.py"
+if [[ -x "$CURATOR_BIN" ]]; then
+    log "🤖 Running curator (limit 20)..."
+    if curator_out=$("$CURATOR_BIN" run --limit 20 2>&1); then
+        # Pull headline numbers from the output
+        n_total=$(echo "$curator_out" | awk -F'[, ]+' '/^Sessions:/ {print $2}')
+        n_to_proc=$(echo "$curator_out" | awk -F'[, ]+' '/^Sessions:/ {for(i=1;i<=NF;i++) if($i=="total,") print $(i+1)}')
+        n_logs=$(echo "$curator_out" | grep -c "wrote daily log" || true)
+        n_blocks=$(echo "$curator_out" | grep -cE "^  📝 " || true)
+        n_medium=$(echo "$curator_out" | grep -cE "^  ⚠️ " || true)
+        log "  ✅ Curator: ${n_logs:-0} daily logs, ${n_blocks:-0} blocks (${n_medium:-0} medium-conf)."
+    else
+        log "  ⚠ Curator failed: $(echo "$curator_out" | tail -3 | tr '\n' ' ')"
+    fi
+else
+    log "  ⬜ curator.py not found at $CURATOR_BIN, skipping."
 fi
 
 # ── Done ──────────────────────────────────────────────────────
