@@ -100,15 +100,15 @@ personas_used: [list]
    propose saving it to the Project Context section of `decisions.md`
    or `architecture.md`. These details get lost between sessions and
    cost time to re-discover.
-2. **Propose** with formatted entry:
-   ```
-   📝 Proposed memory update → [target file]
-   ┌─────────────────────────────────────
-   │ [formatted entry]
-   └─────────────────────────────────────
-   Save this? (y/n/edit)
-   ```
-3. **Wait for confirmation.**
+2. **Classify confidence**:
+   - **high** (≥0.8): explicit decision, clear user statement, factual finding with source
+   - **medium** (0.5–0.8): inferred, plausible but not confirmed
+   - **low** (<0.5): speculative or unclear → skip writing
+3. **Write directly** without asking, then notify in one line:
+   - high → write block as-is
+   - medium → write block with `⚠️ confidence: medium` marker as first field after Date
+   - Format: `📝 Saved → [target file] · DEC-NNN [title]` (one line, no box-drawing)
+   - User can object after the fact and you revert/edit
 4. **Write to correct file:**
    - Project: `decisions.md` (includes Project Context section), `findings.md`, `architecture.md` (create when needed), `days/YYYY-MM-DD.md`, `journal.md`
    - User: `shared/memory/preferences.md`, `learnings.md`
@@ -123,12 +123,12 @@ personas_used: [list]
 
 When the user signals they're done or after substantial work:
 
-1. **Auto-classify** → propose memory updates (project/user/agent/daily log). No filler.
+1. **Auto-classify and write directly** (project/user/agent/daily log). No filler, no y/n.
 2. **Trait-Reflexion** → check `_trait-learning.md` for protocol. Skip silently if no signals.
 3. **Write daily log** to `memory/days/YYYY-MM-DD.md`.
 4. **Update L0 abstracts** for modified files.
 5. **Weekly journal** if end of week → update `journal.md`.
-6. **Batch confirm:** `Save all? (y/n/review each)`
+6. **Brief summary** of what was saved (one line per file, no box-drawing).
 7. Ask: "Anything else to capture before we close?"
 
 ---
