@@ -27,45 +27,64 @@ clu                 # workspace mode — agent sees all projects
 ├── config.yaml          # global settings
 ├── launcher             # the `clu` command
 ├── bootstrap.sh         # agent-guided onboarding interview
-├── heartbeat.sh         # cron-triggered maintenance
+├── heartbeat.sh         # daily maintenance (11 tasks)
+├── setup-memory-sync.sh # memory-repo setup
+├── session-digest.py    # JSONL → compact digest
+├── session-recovery.py  # crashed-session recovery
+├── dashboard.py         # optional web dashboard (Flask)
 ├── adapters/            # provider abstraction layer
-│   ├── claude-code.sh   # Claude Code adapter
-│   ├── aider.sh         # Aider adapter
-│   └── cursor.sh        # Cursor adapter
-├── personas/            # agent character definitions
+│   ├── claude-code.sh
+│   ├── aider.sh
+│   ├── cursor.sh
+│   └── custom.sh
+├── personas/            # OCEAN trait profiles
+│   ├── _traits.md       # trait → behavior reference
+│   ├── _router.md       # dynamic switching rules
+│   ├── _trait-learning.md
+│   ├── default.md
 │   ├── architect.md
 │   ├── implementer.md
 │   ├── reviewer.md
 │   ├── researcher.md
 │   ├── writer.md
-│   ├── default.md
-│   └── _router.md       # dynamic persona switching logic
+│   └── entrepreneur.md
+├── tools/
+│   ├── curator/         # autonomous memory writer (Sonnet 4.6)
+│   └── recall/          # FTS5 index over memory + JSONLs
 ├── projects/
 │   └── my-project/
 │       ├── project.yaml
 │       ├── constraints.md
-│       └── memory/
-│           ├── decisions.md
+│       └── memory/      # symlinked to ~/repos/clu-memory/projects/<n>/memory/
+│           ├── decisions.md      # DEC-NNN
 │           ├── architecture.md
+│           ├── findings.md       # FND-NNN
 │           ├── journal.md
-│           ├── context.md
-│           ├── findings.md     # for research projects
-│           ├── hypotheses.md   # for research projects
-│           └── days/           # daily session logs (YYYY-MM-DD.md)
+│           └── days/             # YYYY-MM-DD.md daily logs
 ├── shared/
-│   ├── core-prompt.md   # system prompt template
+│   ├── core-prompt.md   # system prompt template with {{VAR}}
 │   ├── constraints.md   # global rules
 │   ├── imported/        # global Claude Code imports (via `clu import`)
-│   ├── memory/          # USER memory (about you)
+│   ├── memory/          # USER memory (symlink to clu-memory repo)
 │   │   ├── preferences.md
+│   │   ├── learnings.md          # LRN-NNN
 │   │   ├── patterns.md
-│   │   └── learnings.md
-│   └── agent/           # AGENT memory (how to work)
+│   │   └── references.md
+│   └── agent/           # AGENT memory (symlink to clu-memory repo)
+│       ├── workflows.md          # WF-NNN
 │       ├── skills.md
-│       ├── workflows.md
-│       └── meta.md
-└── templates/
-    └── new-project/     # scaffolding for new projects
+│       ├── meta.md               # SIG-NNN trait signals
+│       └── security-report.md
+├── templates/
+│   └── new-project/
+└── docs/
+    ├── CLU-DOCUMENTATION.md      # full manual (German)
+    ├── ARCHITECTURE.md           # original architecture doc
+    └── OPERATIONS.md             # operations guide
+
+~/repos/clu-memory/      # separate private git repo, holds the actual memory
+                         # files behind the symlinks above. Heartbeat task 9
+                         # commits and pushes nightly.
 ```
 
 ## Key Concepts
@@ -98,7 +117,23 @@ There is no global `decisions.md` — decisions are inherently project-scoped. W
 
 ### Semi-Automatic Memory
 
-The agent proactively detects decision-worthy moments and proposes writing them to the appropriate memory file. You confirm before anything is saved. At session end, the agent auto-classifies outputs across all three memory scopes and writes today's daily log.
+Three writers, all converging on the same memory files:
+
+1. **Live, mid-session** — the agent detects decisions and findings,
+   classifies confidence (high ≥0.8 → block as-is, medium 0.5–0.8 →
+   block with `⚠️ confidence: medium` marker, low <0.5 → skip), and
+   writes directly. You see a one-line notification and can object
+   afterwards.
+2. **End-of-session protocol** — daily log to `memory/days/YYYY-MM-DD.md`,
+   updates L0 abstracts, optional trait-learning reflection.
+3. **Nightly curator** — `tools/curator/curator.py` runs in the
+   heartbeat, finds sessions without a daily log, sends them to
+   Sonnet 4.6 over OpenRouter, and writes daily logs + DEC/FND/LRN
+   blocks autonomously. Output in `~/.clu/curator-actions.log`.
+
+A FTS5 index (`tools/recall/recall.py`) over all memory files plus
+all Claude Code session JSONLs makes the whole archive searchable
+from the command line: `recall.py search "vaultwarden tls"`.
 
 ### Persona System — Big Five Traits (OCEAN)
 
@@ -199,24 +234,35 @@ Copy `adapters/custom.sh`, rename it, and implement two functions:
 
 See existing adapters for examples.
 
-## Backup & Portability
+## Backup, Sync & Memory Repo
 
-The entire `~/.clu` directory is self-contained. Push it to a private git repo:
+Two layers of git:
+
+- `~/.clu/` is the framework code repo (this one).
+- `~/repos/clu-memory/` is a separate private repo holding the
+  actual memory files. `setup-memory-sync.sh` creates it and
+  symlinks `~/.clu/shared/memory`, `~/.clu/shared/agent` and every
+  `~/.clu/projects/*/memory` into it. The heartbeat (task 9)
+  commits and pushes it every night.
+
+To deploy on a new machine:
 
 ```bash
-cd ~/.clu
-git init
-git add -A
-git commit -m "initial clu setup"
-git remote add origin <your-repo>
-git push -u origin main
+git clone <clu-repo>        ~/repos/clu
+git clone <clu-memory-repo> ~/repos/clu-memory
+cd ~/repos/clu && ./install.sh
+~/.clu/setup-memory-sync.sh
 ```
-
-To deploy on a new machine: clone + run `install.sh`.
 
 ## Documentation
 
-For a comprehensive guide in German covering architecture, memory system, personas, adapters, maintenance, and system transfer, see [`docs/CLU-DOCUMENTATION.md`](docs/CLU-DOCUMENTATION.md).
+The complete manual (German, both user guide and architecture
+reference): [`docs/CLU-DOCUMENTATION.md`](docs/CLU-DOCUMENTATION.md).
+
+Other docs:
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — original architecture deep-dive (English)
+- [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — operations guide (English)
+- [`docs/DIALOGUE-SUMMARY.md`](docs/DIALOGUE-SUMMARY.md) — design conversation archive
 
 ## License
 
