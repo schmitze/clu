@@ -59,22 +59,16 @@ clu                 # workspace mode — agent sees all projects
 │           ├── decisions.md      # DEC-NNN
 │           ├── architecture.md
 │           ├── findings.md       # FND-NNN
-│           ├── journal.md
-│           └── days/             # YYYY-MM-DD.md daily logs
+│           └── days/             # YYYY-MM-DD.md, multi-session per file
 ├── shared/
 │   ├── core-prompt.md   # system prompt template with {{VAR}}
 │   ├── constraints.md   # global rules
-│   ├── imported/        # global Claude Code imports (via `clu import`)
-│   ├── memory/          # USER memory (symlink to clu-memory repo)
-│   │   ├── preferences.md
-│   │   ├── learnings.md          # LRN-NNN
-│   │   ├── patterns.md
-│   │   └── references.md
-│   └── agent/           # AGENT memory (symlink to clu-memory repo)
-│       ├── workflows.md          # WF-NNN
-│       ├── skills.md
-│       ├── meta.md               # SIG-NNN trait signals
-│       └── security-report.md
+│   ├── imported/        # global Claude Code imports (instance-local)
+│   └── memory/          # SHARED memory (symlink to clu-memory repo)
+│       ├── preferences.md
+│       ├── learnings.md          # LRN-NNN
+│       ├── references.md
+│       └── meta.md               # optional, SIG-NNN trait signals
 ├── templates/
 │   └── new-project/
 └── docs/
@@ -89,47 +83,57 @@ clu                 # workspace mode — agent sees all projects
 
 ## Key Concepts
 
-### Memory: Three Scopes, Three Tiers
+### Memory: Two Scopes, Three Tiers
 
 Inspired by [OpenViking](https://github.com/volcengine/OpenViking) and [OpenClaw](https://github.com/openclaw/openclaw), memory is organized along two dimensions:
 
-**Three scopes** (who owns the knowledge):
+**Two scopes** (who owns the knowledge):
 
 | Scope | Location | Contains | Loaded |
 |---|---|---|---|
-| **User** | `shared/memory/` | Full user profile, patterns, learnings | Every session |
-| **Agent** | `shared/agent/` | Skills, workflows, meta-knowledge | Every session |
-| **Project** | `projects/<n>/memory/` | Decisions, architecture, findings, daily logs | Active project only |
+| **Shared** | `shared/memory/` | User profile, learnings (LRN), references | Every session |
+| **Project** | `projects/<n>/memory/` | Decisions (DEC), architecture, findings (FND), daily logs | Active project only |
 
-User and Agent are both loaded every session — the split is semantic, not technical. **User** is knowledge about *you* (portable if someone else uses clu). **Agent** is knowledge about *how clu works* (portable across users). You could set up clu for a colleague: keep Agent memory, replace User memory. Project memory is the only scope that changes between sessions.
+The earlier three-scope split (User / Agent / Project) collapsed to two on 2026-05-02 — the agent layer's content was either system mechanics (now in docs) or cross-project lessons (folded into `shared/memory/learnings.md`). One less drawer to choose from when the curator and the live agent decide where to write.
 
 **Three tiers** (how much detail to load):
 
 | Tier | What | When loaded |
 |---|---|---|
 | **L0 – Abstract** | One-sentence summary in front-matter | Always (all files) |
-| **L1 – Overview** | First ~50 lines | Session start (relevant files) |
+| **L1 – Overview** | First ~20 lines | Session start (relevant files) |
 | **L2 – Full** | Entire file content | On-demand |
 
-**Daily session logs** live in `memory/days/YYYY-MM-DD.md` — one file per day. The agent reads today + yesterday at session start. `journal.md` is a weekly highlights index.
+**Daily session logs** live in `memory/days/YYYY-MM-DD.md` — one file per day, one subsection per session (`## Session HH:MM–HH:MM · <id8>`). The launcher reads today + yesterday at session start.
 
-There is no global `decisions.md` — decisions are inherently project-scoped. When a pattern appears across 3+ projects, the agent suggests promoting it to `shared/memory/patterns.md`.
+There is no global `decisions.md` — decisions are inherently project-scoped. Cross-project lessons go to `shared/memory/learnings.md` as `LRN-NNN` entries.
 
 ### Semi-Automatic Memory
 
-Three writers, all converging on the same memory files:
+No end-of-session ritual. Three convergent writers do the work:
 
 1. **Live, mid-session** — the agent detects decisions and findings,
    classifies confidence (high ≥0.8 → block as-is, medium 0.5–0.8 →
    block with `⚠️ confidence: medium` marker, low <0.5 → skip), and
    writes directly. You see a one-line notification and can object
    afterwards.
-2. **End-of-session protocol** — daily log to `memory/days/YYYY-MM-DD.md`,
-   updates L0 abstracts, optional trait-learning reflection.
-3. **Nightly curator** — `tools/curator/curator.py` runs in the
-   heartbeat, finds sessions without a daily log, sends them to
-   Sonnet 4.6 over OpenRouter, and writes daily logs + DEC/FND/LRN
-   blocks autonomously. Output in `~/.clu/curator-actions.log`.
+2. **Pre-session curator** — the launcher invokes
+   `tools/curator/curator.py run --limit 5` before each session. It
+   finds the previous session's transcript (orphan, no daily-log
+   entry yet), sends it to Sonnet 4.6 over OpenRouter, and writes the
+   daily-log subsection plus DEC/FND/LRN blocks before the new
+   prompt is assembled. Latency: instant if nothing pending,
+   10–30s otherwise.
+3. **Nightly curator + memory health review** — the heartbeat runs
+   the curator with a wider limit (safety net for long-idle
+   projects) and once a week kicks off a Claude Opus review across
+   all memory files. Output of the review goes to
+   `~/.clu/memory-review-pending.md` — surfaced at the next
+   session-start with path and age.
+
+`/exit` writes nothing. The curator at the next launch picks up
+where you left off — including filling in the daily-log entry from
+the JSONL.
 
 A FTS5 index (`tools/recall/recall.py`) over all memory files plus
 all Claude Code session JSONLs makes the whole archive searchable
@@ -213,15 +217,14 @@ clu my-saas
 | Command | Description |
 |---|---|
 | `clu` | Workspace mode — agent sees all projects, can switch between them |
-| `clu <project>` | Launch specific project |
+| `clu <project>` | Launch specific project (curator runs first, then memory loads) |
+| `clu resume <project>` | Continue the last Claude thread (`claude --continue`) — no memory inject, full thread, for short pauses |
 | `clu new <name>` | Create new project from template |
 | `clu list` | List all projects |
-| `clu import` | Import Claude Code session history, settings, plans, and project memory |
-| `clu import --list` | Preview what would be imported (read-only) |
 | `clu bootstrap` | Agent-guided onboarding interview |
-| `clu heartbeat` | Run maintenance checks (or set via cron) |
-| `clu check <project>` | Check memory file staleness |
-| `clu summarize <project>` | Run post-session summarizer |
+| `clu heartbeat` | Run maintenance checks (or via systemd timer) |
+| `clu summarize <project>` | Adapter-defined hook (no-op for claude-code; curator handles summaries) |
+| `clu dashboard [port]` | Optional web dashboard (default port 3141) |
 | `clu --adapter <name> <project>` | Override adapter |
 | `clu --persona <name> <project>` | Override persona |
 
@@ -241,8 +244,8 @@ Two layers of git:
 - `~/.clu/` is the framework code repo (this one).
 - `~/repos/clu-memory/` is a separate private repo holding the
   actual memory files. `setup-memory-sync.sh` creates it and
-  symlinks `~/.clu/shared/memory`, `~/.clu/shared/agent` and every
-  `~/.clu/projects/*/memory` into it. The heartbeat (task 9)
+  symlinks `~/.clu/shared/memory` and every `~/.clu/projects/*/memory`
+  into it. The heartbeat (task 9)
   commits and pushes it every night.
 
 To deploy on a new machine:

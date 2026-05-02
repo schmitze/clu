@@ -5,7 +5,7 @@
 > über Sessions, Projekte und Tools hinweg — Bash + Markdown + YAML
 > als Kern, Python für Tools, SQLite für den Recall-Index.
 
-Letzter Stand der Doku: 2026-05-02. Wenn das deutlich in der Vergangenheit liegt, parallel `git log -- docs/CLU-DOCUMENTATION.md` checken.
+Letzter Stand der Doku: 2026-05-02 (Refactor: Memory-Layer von 3 auf 2 Scopes, EoS-Ritual entfernt, Curator vor Session-Start). Wenn das deutlich in der Vergangenheit liegt, parallel `git log -- docs/CLU-DOCUMENTATION.md` checken.
 
 ---
 
@@ -45,24 +45,22 @@ gesamten Agent-Setup zusammenhält:
 
 - **Projekte** mit eigener Memory, Constraints, Default-Persona
 - **Personas** als Big-Five-Trait-Profile (OCEAN, jeweils 1–10)
-- **Memory** über Sessions hinweg, in drei Scopes (User / Agent / Projekt)
+- **Memory** über Sessions hinweg, in zwei Scopes (Shared / Projekt)
 - **Adapter** zu unterschiedlichen Agent-CLIs (Claude Code, Aider, Cursor, …)
-- **Heartbeat** als nächtlicher Wartungs-Job (Staleness, Security, Recall, Curator)
-- **Curator** schreibt Memory autonom aus Session-Transkripten
+- **Curator** läuft vor jedem Session-Start *und* nächtlich, schreibt Memory autonom aus Session-Transkripten
 - **Recall** indexiert das Memory-Repo + alle Session-JSONLs für Volltextsuche
+- **Heartbeat** als nächtlicher Wartungs-Job (Security, Compaction, Recall, Curator, wöchentliche Memory-Health-Review)
 - **Memory-Sync** spiegelt Memory in ein eigenes privates Git-Repo
 
-Beim Launch nimmt clu Persona + Constraints + relevantes Memory, baut
-daraus einen System-Prompt, übergibt ihn dem Adapter, der wiederum den
-Agent startet. Der Agent liest und schreibt Memory direkt auf Disk —
-clu hält die Struktur und Lebenszyklen.
+Beim Launch ruft clu zuerst den Curator (konsolidiert das letzte Session-Transkript zu einem Daily-Log-Eintrag), dann nimmt's Persona + Constraints + relevantes Memory, baut einen System-Prompt, übergibt ihn dem Adapter, der wiederum den Agent startet. Der Agent liest und schreibt Memory direkt auf Disk — clu hält die Struktur und Lebenszyklen.
 
 ### Designprinzipien
 
 - **Provider-agnostisch.** Kein Lock-in auf ein bestimmtes CLI.
 - **Alles ist Text.** Markdown, YAML, ein bisschen SQLite.
 - **Eine Verzeichnis, ein Backup.** `~/.clu` ist self-contained.
-- **Memory ist semi-automatisch.** Agent erkennt Decisions/Findings, schreibt mit Confidence-Tagging.
+- **Kein End-of-Session-Ritual.** Du tippst `/exit` und gehst. Curator macht den Daily-Log-Eintrag beim nächsten Session-Start (oder spätestens im nächtlichen Heartbeat).
+- **Memory ist semi-automatisch.** Agent erkennt Decisions/Findings live mit Confidence-Tagging.
 - **Persona statt Prompt-Engineering.** OCEAN-Trait-Scores steuern Verhalten direkt.
 
 ---
@@ -82,7 +80,7 @@ chmod +x install.sh
 `clu='~/.clu/launcher'` in deine RC-Datei ein, prüft Dependencies,
 fragt ob Cron-Heartbeat und systemd-Dashboard eingerichtet werden sollen.
 
-Beim Upgrade bleiben `projects/`, `shared/memory/`, `shared/agent/`,
+Beim Upgrade bleiben `projects/`, `shared/memory/`,
 `config.yaml`, Personas und alles unter `~/.clu/.secrets*` unangetastet.
 
 ### Erste Schritte
@@ -100,14 +98,6 @@ $EDITOR ~/.clu/projects/mein-projekt/project.yaml
 clu mein-projekt                    # Erste Session starten
 ```
 
-Wenn du Claude Code schon eine Weile genutzt hast und die Historie
-ins Memory holen willst:
-
-```bash
-clu import --list                   # Vorschau (read-only)
-clu import                          # Interaktiver Import
-```
-
 ---
 
 ## 3. Tägliche Bedienung
@@ -117,7 +107,8 @@ clu import                          # Interaktiver Import
 | Befehl | Modus |
 |---|---|
 | `clu` | Workspace — Agent sieht alle Projekte, kann zwischen ihnen navigieren |
-| `clu <projekt>` | Projekt — fokussiert auf ein Projekt |
+| `clu <projekt>` | Projekt — fokussiert auf ein Projekt (lädt Memory, injectet Persona) |
+| `clu resume <projekt>` | Setzt den letzten Claude-Thread fort (`claude --continue`) — kein Memory-Inject, voller Thread, für kurze Pausen |
 | `clu --persona <name> <projekt>` | Override Persona |
 | `clu --adapter <name> <projekt>` | Override Adapter (`claude-code`, `aider`, `cursor`, …) |
 
@@ -127,11 +118,9 @@ clu import                          # Interaktiver Import
 |---|---|
 | `clu list` | Alle Projekte mit Typ und L0-Abstract |
 | `clu new <name>` | Neues Projekt aus `templates/new-project/` |
-| `clu check <projekt>` | Memory-Staleness eines Projekts prüfen |
-| `clu summarize <projekt>` | Post-Session-Summarizer manuell triggern |
+| `clu summarize <projekt>` | No-op heute (Curator macht Daily Logs); Adapter-Hook bleibt für Custom-Adapter |
 | `clu bootstrap` | Onboarding-Interview (User-Profil, Default-Persona) |
-| `clu import` / `clu import --list` | Claude-Code-History/-Settings importieren |
-| `clu heartbeat` | Wartung manuell starten (sonst per Cron) |
+| `clu heartbeat` | Wartung manuell starten (sonst per systemd-Timer) |
 | `clu dashboard [port]` | Web-Dashboard (Default Port 3141) |
 
 ### Mid-Session Projekt-Wechsel
@@ -159,29 +148,33 @@ und Memory-Updates für das alte Projekt werden geschrieben.
 
 ### Memory im Alltag
 
-Du musst nichts manuell schreiben. Drei Wege, wie Memory entsteht:
+Du musst nichts manuell schreiben. Drei Mechanismen, alle convergieren:
 
-1. **Live, vom Agent** (semi-autonom):
+1. **Live, vom Agent während der Session** (semi-autonom):
    Agent erkennt eine Entscheidung oder ein Finding, klassifiziert die
    Confidence (high/medium/low) und schreibt direkt in die richtige
    Datei. Bei medium kommt ein `⚠️ confidence: medium` Marker. Du siehst
    eine einzeilige Notiz: `📝 Saved → projects/foo/memory/decisions.md · DEC-007 …`.
    Bei low wird gar nichts geschrieben.
 
-2. **End-of-Session, vom Agent**:
-   Wenn du signalisierst dass du fertig bist (oder `/exit` schickst),
-   läuft das End-of-Session-Protokoll: Daily Log schreiben, L0-Abstracts
-   updaten, ggf. Trait-Reflexion.
+2. **Curator vor jedem Session-Start** (im Launcher):
+   Bevor das Memory in den neuen Prompt geladen wird, schaut der
+   Curator nach orphan Sessions (Transkripte ohne Daily-Log-Eintrag).
+   Sonnet 4.6 klassifiziert das Transkript und schreibt für die
+   Session einen Subsection-Eintrag in `days/YYYY-MM-DD.md` plus
+   ggf. neue DEC/FND/LRN-Blöcke. Latenz: instant wenn nichts pending,
+   sonst 10–30s. Limit `--limit 5` pro Lauf.
 
-3. **Heartbeat, vom Curator** (autonom, im Hintergrund):
-   Der nächtliche Heartbeat-Job (siehe [§11](#11-heartbeat)) findet
-   verwaiste Sessions ohne Daily Log, lässt Sonnet 4.6 sie klassifizieren,
-   und schreibt Daily Logs + DEC/FND/LRN-Blöcke direkt ins Memory-Repo.
-   Output landet in `~/.clu/curator-actions.log`.
+3. **Curator im nächtlichen Heartbeat** (Sicherheitsnetz):
+   Selber Code, andere Frequenz, höheres Limit (`--limit 20`). Falls
+   du tagelang nicht in ein Projekt gehst, holt der Heartbeat das nach.
 
-Wenn du den Agent korrigieren willst: Sag's einfach, er revertiert oder
-editiert. Memory-Files sind Markdown — du kannst auch direkt mit `$EDITOR`
-ran.
+**Kein End-of-Session-Ritual.** Bei `/exit` passiert nichts. Der
+Curator beim nächsten Session-Start macht das Daily Log.
+
+Wenn du den Agent korrigieren willst: sag's einfach, er revertiert
+oder editiert. Memory-Files sind Markdown — du kannst auch direkt
+mit `$EDITOR` ran.
 
 ### Bootstrap (Onboarding-Interview)
 
@@ -197,24 +190,6 @@ Startet den `bootstrap.sh`-Wizard, der dich durch:
 - Setzt `~/.clu/.bootstrapped` als Marker
 
 Du kannst ihn jederzeit erneut aufrufen.
-
-### Import von Claude-Code-History
-
-```bash
-clu import --list      # Was würde importiert?
-clu import             # Interaktiv: Sessions, Settings, Plans, Memory pro Projekt
-```
-
-`import.sh` durchsucht `~/.claude/` nach:
-
-- Session-Transkripten pro Projekt-Pfad → kann diese in clu-Projekte einlesen
-- `~/.claude/settings.json` und Plugin-Config → übernehmen oder skippen
-- Plans und CLAUDE.md-Inhalte → in passende Memory-Files
-
-Wenn ein Quellprojekt-Pfad nicht zu einem clu-Projekt passt, fragt der
-Import ob ein clu-Projekt dafür angelegt werden soll. Seit Commit
-`8ab13f6` (2026-04-30) wird ein neu importiertes Projekt automatisch
-ins Memory-Sync-Repo verkabelt.
 
 ---
 
@@ -272,7 +247,7 @@ trait_overrides:
 Wenn `trait_learning: true` in `config.yaml` (Default):
 
 - **Explizite Korrektur** mid-session („sei direkter", „rede weniger")
-  → Agent loggt ein Signal in `shared/agent/meta.md` (Format `### SIG-NNN`)
+  → Agent loggt ein Signal in `shared/memory/meta.md` (Format `### SIG-NNN`)
 - **Implizite Beobachtung** (User skippt Erklärungen, lehnt kreative Ideen ab, …)
   → in der End-of-Session-Reflexion
 - **Aggregation** beim nächsten Session-Start: Bei genug Evidenz
@@ -283,13 +258,12 @@ Wenn `trait_learning: true` in `config.yaml` (Default):
 
 ### 4.2 Memory-System (Übersicht)
 
-Drei orthogonale Scopes:
+Zwei orthogonale Scopes:
 
 | Scope | Pfad | Was drinsteht | Lebensdauer |
 |---|---|---|---|
-| **User** | `shared/memory/` | Wer du bist, deine Muster, Lessons | projektübergreifend |
-| **Agent** | `shared/agent/` | Wie clu arbeitet, Skills, Workflows | projektübergreifend |
-| **Projekt** | `projects/<n>/memory/` | Decisions, Architecture, Findings, Daily Logs | pro Projekt |
+| **Shared** | `shared/memory/` | Wer du bist, deine Lessons (LRN), externe Refs | projektübergreifend |
+| **Projekt** | `projects/<n>/memory/` | Decisions (DEC), Architecture, Findings (FND), Daily Logs | pro Projekt |
 
 Drei Tiers (wieviel Detail beim Session-Start in den Prompt):
 
@@ -304,7 +278,7 @@ Mehr in [§10](#10-memory-system).
 ### 4.3 Memory-Sync (separates Git-Repo)
 
 Memory liegt physisch in `~/repos/clu-memory/` (eigenes privates Repo)
-und wird per Symlink in `~/.clu/shared/memory/`, `~/.clu/shared/agent/`
+und wird per Symlink in `~/.clu/shared/memory/`
 und `~/.clu/projects/*/memory/` eingehängt. Der Heartbeat (Task 9)
 committed und pushed jede Nacht automatisch.
 
@@ -333,16 +307,22 @@ weil sie clu-exklusiver strukturierter Inhalt sind.
 
 ### 4.5 Curator (autonomes Memory-Schreiben)
 
-`tools/curator/curator.py` läuft als Heartbeat-Task 11 (oder manuell):
+`tools/curator/curator.py` läuft an zwei Stellen:
 
-- Findet Sessions ohne zugehörigen Daily Log (state-tracked in `curator-state.json`)
+1. **Vor jedem Session-Start** im Launcher (`--limit 5`, timeout 60s) — konsolidiert das letzte Transkript bevor das Memory in den neuen Prompt geladen wird
+2. **Im nächtlichen Heartbeat** als Task 11 (`--limit 20`) — Sicherheitsnetz für lange ungenutzte Projekte
+
+Was er tut:
+
+- Findet Sessions ohne zugehörigen Daily-Log-Eintrag (state-tracked in `curator-state.json`)
 - Schickt sie an Sonnet 4.6 (über OpenRouter)
-- Klassifiziert: schreibe Daily Log + ggf. DEC / FND / LRN
+- Klassifiziert: schreibe Daily-Log-Sektion + ggf. DEC / FND / LRN
 - Confidence-Tagging:
   - `≥0.8` (high) → Block as-is
   - `0.5–0.8` (medium) → Block mit `⚠️ confidence: medium` Marker
   - `<0.5` (low) → skippen, Begründung in `curator-skipped.log`
 - Schreibt direkt ins Memory-Repo (kein y/n)
+- Daily Logs hängen mehrere Sessions desselben Tages als `## Session HH:MM-HH:MM · <id8>` Subsections in dieselbe Datei
 
 Logs:
 
@@ -412,10 +392,9 @@ Action-Buttons (Memory-Compaction, Heartbeat, …).
 ├── .bootstrapped                      # Marker: Onboarding fertig
 ├── .integrity-hashes                  # SHA-256 der Core-Dateien
 │
-├── launcher                           # Hauptbefehl `clu` (~1000 Zeilen Bash)
+├── launcher                           # Hauptbefehl `clu`
 ├── bootstrap.sh                       # Onboarding-Wizard
 ├── heartbeat.sh                       # nächtliche Wartung
-├── import.sh                          # Claude-Code-History importieren
 ├── install.sh                         # Installer/Upgrader
 ├── migrate.sh                         # Migrations-Helper
 ├── create-persona.sh                  # Persona-Wizard
@@ -445,17 +424,11 @@ Action-Buttons (Memory-Compaction, Heartbeat, …).
 ├── shared/
 │   ├── core-prompt.md                 # System-Prompt-Template mit {{VAR}}
 │   ├── constraints.md                 # globale Regeln
-│   ├── imported/                      # global Claude-Code-Imports
-│   ├── memory/        ─symlink→ clu-memory/shared/memory/
-│   │   ├── preferences.md             # User-Profil
-│   │   ├── learnings.md               # Lessons (LRN-NNN)
-│   │   ├── patterns.md                # bewährte Ansätze
-│   │   └── references.md              # externe Refs (Notion, APIs, …)
-│   └── agent/         ─symlink→ clu-memory/shared/agent/
-│       ├── workflows.md               # WF-NNN: Multi-Step-Prozesse
-│       ├── skills.md                  # gelernte Techniken
-│       ├── meta.md                    # Trait-Signals, Self-Knowledge
-│       └── security-report.md         # letzter Audit
+│   ├── imported/                      # global Claude-Code-Imports (instance-lokal)
+│   └── memory/        ─symlink→ clu-memory/shared/memory/
+│       ├── preferences.md             # User-Profil
+│       ├── learnings.md               # Lessons (LRN-NNN)
+│       └── references.md              # externe Refs (Notion, APIs, …)
 │
 ├── projects/
 │   ├── _workspace/                    # Workspace-Modus-Projekt
@@ -466,16 +439,14 @@ Action-Buttons (Memory-Compaction, Heartbeat, …).
 │           ├── decisions.md           # DEC-NNN
 │           ├── architecture.md
 │           ├── findings.md            # FND-NNN
-│           ├── journal.md             # Wochen-Index
-│           ├── days/                  # Daily Logs
-│           │   └── YYYY-MM-DD.md
-│           └── (context.md, hypotheses.md, … je nach Typ)
+│           └── days/                  # Daily Logs (multi-session per file)
+│               └── YYYY-MM-DD.md
 │
 ├── templates/
 │   └── new-project/                   # Scaffold für `clu new`
 │
 ├── tools/
-│   ├── curator/curator.py             # autonomer Memory-Writer
+│   ├── curator/curator.py             # autonomer Memory-Writer (Sonnet 4.6)
 │   └── recall/recall.py               # FTS5-Index
 │
 ├── docs/
@@ -486,9 +457,11 @@ Action-Buttons (Memory-Compaction, Heartbeat, …).
 │
 ├── recall.db                          # FTS5-Index (disposable)
 ├── curator-state.json                 # processed sessions
-├── curator-actions.log
-├── curator-skipped.log
-└── heartbeat-agent.log
+├── curator-actions.log                # Curator-Aktionen
+├── curator-skipped.log                # abgelehnte Kandidaten
+├── memory-review-pending.md           # letzter Memory-Health-Review (Task 12)
+├── security-report.md                 # letzter Security-Audit (Task 6)
+└── heartbeat-agent.log                # Output Tasks 6/7/12
 ```
 
 `~/repos/clu-memory/` (eigenes Repo) hält die echten Memory-Dateien;
@@ -511,6 +484,8 @@ in `~/.clu/` sind Symlinks. Skripte und Configs bleiben lokal in `~/.clu/`.
               │  Launcher (bash)                     │
               │  • parse args                        │
               │  • resolve project + persona         │
+              │  • run curator (--limit 5, t/o 60s)  │
+              │  • surface pending memory-review     │
               │  • assemble context (core-prompt.md) │
               │  • enforce token budget              │
               │  • dispatch to adapter               │
@@ -535,12 +510,13 @@ in `~/.clu/` sind Symlinks. Skripte und Configs bleiben lokal in `~/.clu/`.
 
 Asynchron, im Hintergrund:
 
-  Heartbeat (Cron, 04:00)
-    ├─ Tasks 1–7  Wartung, Security, Compaction
+  Heartbeat (systemd-Timer, 04:00 lokal)
+    ├─ Tasks 2–7  Daily-Log-Hygiene, User-Profile, Morning-Brief, Security, Compaction
     ├─ Task 8     Auto-Fix dashboard recommendations
-    ├─ Task 9     Memory-Repo committen + pushen
+    ├─ Task 9     Memory-Repo committen + pull --rebase + push
     ├─ Task 10    Recall reindex (FTS5)
-    └─ Task 11    Curator run (autonomes Memory)
+    ├─ Task 11    Curator run (--limit 20)
+    └─ Task 12    Memory health review (wöchentlich, Opus, Vorschläge nach memory-review-pending.md)
 ```
 
 ### Datenfluss beim Launch
@@ -565,13 +541,12 @@ Asynchron, im Hintergrund:
 |---|---|
 | `cmd_list()` | `clu list` |
 | `cmd_new()` | `clu new <name>` — kopiert `templates/new-project/` |
-| `cmd_check()` | `clu check <projekt>` — Memory-Staleness |
-| `cmd_summarize()` | `clu summarize <projekt>` |
+| `cmd_summarize()` | `clu summarize <projekt>` (Adapter-Hook, default no-op) |
 | `assemble_workspace_context()` | Workspace-Modus: alle Projekte als Index |
 | `assemble_context()` | Project-Modus: Persona + Memory + Constraints |
 | `_build_compact_project_index()` | kompakter Projekt-Überblick fürs Budget |
 | `_enforce_budget()` | tier-weise Reduktion bei Token-Überschreitung |
-| `main()` | Entry-Point, Arg-Parsing, Dispatch |
+| `main()` | Entry-Point, Arg-Parsing, Pre-Session-Curator, Dispatch |
 
 ### Pipeline-Phasen
 
@@ -583,7 +558,13 @@ Subcommand, Projektname.
 - Projekt explizit → Existenz validieren
 - Kein Projekt → `default_project` aus `config.yaml`, sonst Workspace
 
-**Phase 3 — Context Assembly.**
+**Phase 3 — Pre-Session Curator.** Bevor Memory geladen wird:
+`tools/curator/curator.py run --limit 5` (timeout 60s). Findet
+orphan Sessions, schreibt Daily-Log-Sektionen + Blocks aus
+Transkripten. Memory-Files sind danach aktuell. Wenn pending
+`memory-review-pending.md` existiert: Pfad+Alter ausgeben.
+
+**Phase 4 — Context Assembly.**
 
 ```
 1.  project.yaml laden (type, repo_path, default_persona)
@@ -594,30 +575,29 @@ Subcommand, Projektname.
 6.  shared/constraints.md (global)
 7.  projects/<n>/constraints.md (projektspezifisch)
 8.  shared/memory/*.md → L1-Auszüge
-9.  shared/agent/*.md → L1-Auszüge
-10. projects/<n>/memory/*.md → L1-Auszüge
-11. repo_path validieren
-12. Behavior-Profile aus Trait-Scores generieren
-13. {{VAR}} im Template substituieren
-14. → $AGENT_PROMPT
+9.  projects/<n>/memory/*.md → L1-Auszüge
+10. repo_path validieren
+11. Behavior-Profile aus Trait-Scores generieren
+12. {{VAR}} im Template substituieren
+13. → $AGENT_PROMPT
 ```
 
-**Phase 4 — Budget Enforcement.** Wenn `$AGENT_PROMPT` das Budget
+**Phase 5 — Budget Enforcement.** Wenn `$AGENT_PROMPT` das Budget
 überschreitet:
 
 | Tier | Aktion | Einsparung |
 |---|---|---|
-| 1 | Agent Memory → nur Abstracts | 1–2k Zeichen |
-| 2 | Projekt-Index → kompakt (Name/Typ/Repo) | 1–3k |
-| 3 | User Memory → nur Abstracts | 0.5–1.5k |
+| 1 | Projekt-Index → kompakt (Name/Typ/Repo) | 1–3k Zeichen |
+| 2 | Shared Memory → nur Abstracts | 0.5–1.5k |
 | Fallback | Warnung loggen, weitermachen | — |
 
-**Phase 5 — Adapter Dispatch.** Sourced `adapters/${ADAPTER}.sh`,
+**Phase 6 — Adapter Dispatch.** Sourced `adapters/${ADAPTER}.sh`,
 ruft `adapter_launch` mit allen Env-Vars.
 
-**Phase 6 — Post-Session.** Adapter räumt auf (z.B. CLAUDE.md
+**Phase 7 — Post-Session.** Adapter räumt auf (z.B. CLAUDE.md
 wiederherstellen), prüft `/tmp/clu/switch-target` für mid-session
-Projektwechsel und relauncht ggf.
+Projektwechsel und relauncht ggf. Kein End-of-Session-Ritual mehr —
+der nächste Launcher-Run holt das Daily Log über den Curator nach.
 
 ---
 
@@ -647,7 +627,9 @@ Optional `adapter_summarize` für Post-Session-Summary.
 1. Staging-Dir anlegen: `/tmp/clu/$AGENT_PROJECT/`
 2. Existing `CLAUDE.md` im Repo nach `CLAUDE.md.clu-backup` sichern
 3. `$AGENT_PROMPT` als neue `CLAUDE.md` schreiben
-4. Session-Digest der letzten 2 Sessions ans Ende anhängen (siehe DEC-001)
+4. Wenn die letzte Session unsauber endete: Recovery-Block injizieren
+   (mit Conversation-Tail). Sonst: Digest der letzten 3 Sessions
+   (`session-digest.py --last 3 --max-chars 800`) anhängen.
 5. `claude` CLI in `$AGENT_REPO_PATH` starten
 6. Nach `/exit`:
    - Backup wiederherstellen
@@ -655,6 +637,10 @@ Optional `adapter_summarize` für Post-Session-Summary.
    - `/tmp/clu/$AGENT_PROJECT/` aufräumen
 
 Der Backup-Pfad heißt im Repo `CLAUDE.md.clu-backup` und ist gitignored.
+
+`adapter_summarize` ist heute ein No-op — Daily-Logs schreibt der
+Curator. Für Custom-Adapter mit eigener Summarizing-Logik bleibt
+der Hook erhalten.
 
 ---
 
@@ -700,7 +686,7 @@ Spezifikation in `personas/_trait-learning.md`. Kurzform:
 | „sei kreativer" / „denk weiter" | O: +1 |
 | „gründlicher" / „prüf nochmal" | C: +1 |
 
-→ Schreibt Signal-Block in `shared/agent/meta.md` unter `## Trait Signals`:
+→ Schreibt Signal-Block in `shared/memory/meta.md` unter `## Trait Signals`:
 
 ```markdown
 ### SIG-NNN – "User-Wortlaut"
@@ -732,17 +718,18 @@ markiert.
 
 ## 10. Memory-System
 
-### Drei Scopes
+### Zwei Scopes
 
 | Scope | Pfad | Inhalt | Ladeverhalten |
 |---|---|---|---|
-| **User** | `shared/memory/` | preferences, learnings, patterns, references | jede Session |
-| **Agent** | `shared/agent/` | workflows, skills, meta, security-report | jede Session |
-| **Projekt** | `projects/<n>/memory/` | decisions, architecture, findings, journal, days/ | nur aktives Projekt |
+| **Shared** | `shared/memory/` | preferences, learnings, references | jede Session |
+| **Projekt** | `projects/<n>/memory/` | decisions, architecture, findings, days/ | nur aktives Projekt |
 
-User vs. Agent ist semantisch: User = Wissen über *dich* (portabel
-falls jemand anders clu nutzt), Agent = Wissen über *Arbeitsweisen*
-(portabel über User hinweg). Beide werden zusammen geladen.
+Vorher gab es einen dritten „Agent"-Scope (Workflows, Skills, Meta).
+Auflösung 2026-05-02: System-Workflows in die Doku, Lessons als
+LRN-Einträge in `shared/memory/learnings.md`, Trait-Signals (falls
+genutzt) in `shared/memory/meta.md`. Begründung: einfacher,
+weniger Schubladen für Curator und Live-Agent zu wählen.
 
 ### Drei Tiers
 
@@ -806,20 +793,32 @@ Fehlt `abstract:`, wird die Datei beim L0-Loading übersprungen.
 - **Category:** technical | process | strategic
 ```
 
-**Daily Log** (`memory/days/YYYY-MM-DD.md`):
+**Daily Log** (`memory/days/YYYY-MM-DD.md`) — eine Datei pro Tag,
+mit einer Subsection pro Session:
 
 ```markdown
 ---
 date: YYYY-MM-DD
 project: <name>
-personas_used: [list]
 ---
+
 # YYYY-MM-DD
-## What happened
-## Decisions made
-## Open threads
-## Next session
+
+## Session 09:30–12:00 · 8ab13f6e
+
+### What happened
+### Decisions made
+### Open threads
+### Next session
+
+## Session 18:00–19:15 · 49fa0ed4
+
+### What happened
+…
 ```
+
+Der Curator hängt jede neue Session als Subsection an. Idempotent
+auf Session-ID — wenn die ID schon im File steht, wird übersprungen.
 
 ### Memory-Schreib-Protokoll (live, vom Agent)
 
@@ -837,10 +836,12 @@ Seit 2026-05-02 (Commit `5508543`) autonom mit Confidence-Tagging:
    - Notification einzeilig: `📝 Saved → projects/foo/memory/decisions.md · DEC-007 …`
 4. **User kann objection einlegen** und der Agent revertiert.
 
-### Promotion-Regel
+### Cross-Project Lessons
 
-Wenn ein Pattern in 3+ Projekten auftaucht → in `shared/memory/patterns.md`
-promoten.
+Wenn eine Lesson in mehreren Projekten relevant ist → als `LRN-NNN` in
+`shared/memory/learnings.md`. Es gibt keine separate `patterns.md`
+mehr — Lessons und „bewährte Muster" wurden zu einer Schublade
+zusammengelegt.
 
 ### Memory-Sync Repo
 
@@ -848,8 +849,7 @@ promoten.
 ~/repos/clu-memory/
 ├── .git/
 ├── shared/
-│   ├── memory/         # User-Scope
-│   └── agent/          # Agent-Scope
+│   └── memory/         # Shared-Scope
 └── projects/
     └── <name>/memory/  # Projekt-Scope (Symlinks der einzelnen Projekte)
 ```
@@ -868,12 +868,12 @@ Memory-Repos (sind Konfiguration, nicht Memory).
 ## 11. Heartbeat
 
 `heartbeat.sh` läuft nächtlich per systemd-Timer (`clu-heartbeat.timer`,
-04:00 lokal). 11 Tasks, jede einzeln deaktivierbar.
+04:00 lokal). 11 aktive Tasks (Task 1 wurde 2026-05-02 entfernt).
 
 | Task | Was passiert | Dauer typ. |
 |---|---|---|
-| 1 | Memory-Staleness pro Projekt (`last_verified` > 30d) | <1s |
-| 2 | Daily-Log-Hygiene (fehlende Verzeichnisse, Wochen-Rollup) | <1s |
+| 1 | *(entfernt — war Memory-Staleness, ersetzt durch Task 12)* | — |
+| 2 | Daily-Log-Hygiene (fehlende Verzeichnisse) | <1s |
 | 3 | User-Profile-Frische (preferences.md zu dünn?) | <1s |
 | 4 | Morning Brief (gestrige Open Threads, optional) | <1s |
 | 5 | Security-Audit (bash) — Prompt-Injection-Scan, Integrity, Credentials | ~5s |
@@ -882,10 +882,18 @@ Memory-Repos (sind Konfiguration, nicht Memory).
 | 8 | Auto-Fix safe dashboard recommendations | <5s |
 | 9 | Memory-Repo Sync (commit + pull --rebase + push) | ~3s |
 | 10 | Recall Reindex (incremental) | ~10s |
-| 11 | Curator Run (limit 20 sessions, autonomes Memory-Schreiben) | bis 5min |
+| 11 | Curator Run (--limit 20, autonomes Memory-Schreiben) | bis 5min |
+| 12 | Memory Health Review (wöchentlich, Opus, Vorschläge) | bis 15min (timeout) |
 
-Timeouts: Tasks 6 und 7 haben einen 10-Minuten-Hard-Cap (`timeout 600`),
+Timeouts: Tasks 6, 7 (10 min) und 12 (15 min) haben Hard-Caps,
 damit ein hängender Claude-Aufruf nicht den ganzen Heartbeat blockiert.
+
+**Task 12 läuft nur wenn `~/.clu/memory-review-pending.md` älter als
+`memory_review_interval_days` (Default 7) ist** — also wöchentlich
+solange Mi den Report nicht gelöscht hat. Output: Vorschläge zu stale
+facts, Redundanzen, Konflikten, Abstract-Drift, Quality. Beim
+Session-Start wird der Report-Pfad + Alter im Launcher-Output
+angezeigt.
 
 Logs:
 
@@ -909,6 +917,11 @@ clu heartbeat                 # gleicher Effekt, falls so im Launcher gemappt
 
 `tools/curator/curator.py` (~30k, Python 3, OpenRouter-API).
 
+Wird an zwei Stellen aufgerufen:
+
+- **Pre-Session** im Launcher (`--limit 5`, timeout 60s) — vor jedem `clu <projekt>` oder `clu`-Workspace-Start, konsolidiert das letzte Session-Transkript bevor Memory in den neuen Prompt geladen wird
+- **Heartbeat Task 11** (`--limit 20`) — Sicherheitsnetz für Sessions die im Launcher-Pfad nicht erreicht wurden
+
 ### State
 
 `~/.clu/curator-state.json` führt Buch über:
@@ -922,11 +935,12 @@ clu heartbeat                 # gleicher Effekt, falls so im Launcher gemappt
 ```
 1. State laden
 2. Alle Claude-Code-JSONLs in ~/.claude/projects/*/ scannen
-3. Sessions ohne Daily-Log finden (orphan)
-4. Für jede orphan Session (bis --limit, default 20):
+3. Sessions ohne Daily-Log-Eintrag finden (orphan)
+   • orphan = (project, date) hat noch keinen Eintrag mit dieser Session-ID
+4. Für jede orphan Session (bis --limit):
    a. JSONL parsen → komprimierter Dialogtext
    b. Sonnet 4.6 (über OpenRouter) klassifizieren lassen:
-        - daily-log Sektionen
+        - Daily-Log-Sektion für diese Session (## Session HH:MM-HH:MM · <id8>)
         - DEC / FND / LRN Kandidaten
         - Confidence pro Block
    c. Filter:
@@ -934,10 +948,13 @@ clu heartbeat                 # gleicher Effekt, falls so im Launcher gemappt
         - 0.5–0.8 → ⚠️ confidence: medium Marker
         - ≥0.8 → as-is
    d. Direkt schreiben:
-        - Daily Log → projects/<name>/memory/days/YYYY-MM-DD.md
+        - Daily-Log-Sektion an days/YYYY-MM-DD.md anhängen
+          (file wird mit Frontmatter angelegt falls neu;
+           idempotent auf session_id, doppelte Subsections werden übersprungen)
         - DEC → projects/<name>/memory/decisions.md (NNN++)
         - FND → projects/<name>/memory/findings.md (NNN++)
         - LRN → shared/memory/learnings.md (NNN++)
+        - bei jedem Append: entry_count + last_verified im Frontmatter aktualisieren
    e. Action loggen → curator-actions.log
 5. State updaten (Session als verarbeitet markieren)
 ```
@@ -1050,19 +1067,19 @@ Mechanik:
 - Liest `~/.claude/projects/<encoded-path>/<session-id>.jsonl`
 - Extrahiert die letzten N Nachrichten als Conversation-Tail
 - Generiert eine Recovery-Anweisung in der nächsten CLAUDE.md beim Launch:
-  „Schreib einen Daily Log für diese unterbrochene Session, dann
-  identifiziere wo wir unterbrochen wurden und biete an, weiterzumachen."
+  „Identifiziere wo wir unterbrochen wurden und biete an, weiterzumachen."
 
 DEC-004 fixiert: Recovery wird nicht von einem separaten LLM-Call
-gemacht, sondern Claude selbst beim nächsten Start (zero extra cost,
-voller Kontext).
+gemacht. Den Daily-Log-Teil schreibt der Pre-Session-Curator
+sowieso (mit Sonnet, aus dem JSONL). Die Recovery-Anweisung lenkt
+nur den nächsten Live-Agent zum Wiederaufsatz-Punkt.
 
-`session-digest.py` ist der kleinere Cousin: extrahiert immer die letzten
-2 Sessions als kompakten Digest und hängt ihn im claude-code-Adapter
-an die CLAUDE.md.
+`session-digest.py` ist der kleinere Cousin: extrahiert die letzten
+3 Sessions als kompakten Digest (`--last 3 --max-chars 800`) und
+hängt ihn im claude-code-Adapter an die CLAUDE.md.
 
 ```bash
-python3 ~/.clu/session-digest.py /home/mi/repos/<projekt> --last 2 --max-chars 300 --format md
+python3 ~/.clu/session-digest.py /home/mi/repos/<projekt> --last 3 --max-chars 800 --format md
 python3 ~/.clu/session-recovery.py --session <id> --project <name>
 ```
 
@@ -1074,10 +1091,9 @@ python3 ~/.clu/session-recovery.py --session <id> --project <name>
 
 | Datei | Sprache | Zweck |
 |---|---|---|
-| `launcher` | Bash | Hauptbefehl `clu` — Subcommands, Context-Assembly, Adapter-Dispatch |
+| `launcher` | Bash | Hauptbefehl `clu` — Subcommands, Pre-Session-Curator, Context-Assembly, Adapter-Dispatch |
 | `bootstrap.sh` | Bash | Onboarding-Wizard (User-Profil, Default-Persona, optional Erstprojekt) |
-| `heartbeat.sh` | Bash | Nächtliche Wartung (11 Tasks) |
-| `import.sh` | Bash | Claude-Code-History/-Settings/-Memory in clu importieren |
+| `heartbeat.sh` | Bash | Nächtliche Wartung (12 Tasks) |
 | `install.sh` | Bash | Installer/Upgrader, kopiert Code nach `~/.clu`, Shell-Alias, Dependency-Check |
 | `migrate.sh` | Bash | Migrations-Helper für Schema-Changes |
 | `create-persona.sh` | Bash | Interaktiver Persona-Wizard (Name, Trait-Scores) |
@@ -1109,7 +1125,7 @@ python3 ~/.clu/session-recovery.py --session <id> --project <name>
 
 | Datei | Zweck |
 |---|---|
-| `config.yaml` | globale Settings: `default_adapter`, `default_project`, `dynamic_personas`, `trait_learning`, `prompt_budget_chars`, `memory_sync_repo` |
+| `config.yaml` | globale Settings: `default_adapter`, `default_project`, `dynamic_personas`, `trait_learning`, `prompt_budget_chars`, `memory_sync_repo`, `memory_review_interval_days` |
 | `projects/<n>/project.yaml` | pro Projekt: `type`, `description`, `repo_path`, `default_persona`, `trait_overrides` |
 | `shared/constraints.md` | globale Regeln (gelten in jeder Session) |
 | `projects/<n>/constraints.md` | projektspezifische Regeln |
@@ -1130,19 +1146,14 @@ python3 ~/.clu/session-recovery.py --session <id> --project <name>
 
 | Datei | Scope | Inhalt |
 |---|---|---|
-| `shared/memory/preferences.md` | User | wer du bist, Sprache, Stil, Prioritäten |
-| `shared/memory/learnings.md` | User | LRN-NNN: Lessons Learned, projektübergreifend |
-| `shared/memory/patterns.md` | User | bewährte Ansätze (3+ Projekte) |
-| `shared/memory/references.md` | User | Notion, APIs, externe Refs |
-| `shared/agent/workflows.md` | Agent | WF-NNN: Multi-Step-Prozesse |
-| `shared/agent/skills.md` | Agent | gelernte Techniken |
-| `shared/agent/meta.md` | Agent | `## Trait Signals` (SIG-NNN), Self-Knowledge |
-| `shared/agent/security-report.md` | Agent | letzter Audit (Plugin-Versionen, CVEs, …) |
+| `shared/memory/preferences.md` | Shared | wer du bist, Sprache, Stil, Prioritäten |
+| `shared/memory/learnings.md` | Shared | LRN-NNN: Lessons Learned, projektübergreifend |
+| `shared/memory/references.md` | Shared | Notion, APIs, externe Refs |
+| `shared/memory/meta.md` | Shared | optional, `## Trait Signals` (SIG-NNN) — wenn Trait-Learning genutzt |
 | `projects/<n>/memory/decisions.md` | Project | DEC-NNN |
 | `projects/<n>/memory/architecture.md` | Project | Systemdesign-Beschreibung |
 | `projects/<n>/memory/findings.md` | Project | FND-NNN |
-| `projects/<n>/memory/journal.md` | Project | Wochen-Index der Daily Logs |
-| `projects/<n>/memory/days/YYYY-MM-DD.md` | Project | Daily Logs |
+| `projects/<n>/memory/days/YYYY-MM-DD.md` | Project | Daily Logs (multi-session per file) |
 
 ### Runtime-Artefakte
 
@@ -1152,7 +1163,9 @@ python3 ~/.clu/session-recovery.py --session <id> --project <name>
 | `~/.clu/curator-state.json` | verarbeitete Sessions, NNN-Counter | curator.py |
 | `~/.clu/curator-actions.log` | jede DEC/FND/LRN/Daily-Log Aktion | curator.py |
 | `~/.clu/curator-skipped.log` | abgelehnte Kandidaten + Reason | curator.py |
-| `~/.clu/heartbeat-agent.log` | Output Tasks 6+7 | heartbeat.sh |
+| `~/.clu/security-report.md` | letzter Security-Audit | heartbeat.sh Task 6 |
+| `~/.clu/memory-review-pending.md` | Vorschläge vom wöchentlichen Memory-Health-Review | heartbeat.sh Task 12 |
+| `~/.clu/heartbeat-agent.log` | Output Tasks 6+7+12 | heartbeat.sh |
 | `~/.clu/.bootstrapped` | Marker | bootstrap.sh |
 | `~/.clu/.integrity-hashes` | SHA-256 der Core-Files | install.sh, security audit |
 | `/tmp/clu/switch-target` | Mid-Session Projekt-Wechsel | Agent / claude-code Adapter |
@@ -1233,10 +1246,13 @@ korrekt chunkt.
 | Switch zwischen Projekten klappt nicht | `/exit` statt Ctrl+C verwenden. `cat /tmp/clu/switch-target` zeigt das Ziel |
 | Adapter nicht gefunden | `config.yaml` → `default_adapter`, Datei in `adapters/` vorhanden + executable? |
 | Curator schreibt nichts | `OPENROUTER_API_KEY` in `.secrets.env`? `curator-skipped.log` checken — vielleicht alle low-confidence |
+| Curator-Latenz beim Session-Start zu hoch | `~/.clu/curator-state.json` zeigt zuviele orphans? Manuell: `~/.clu/tools/curator/curator.py run --limit 50` einmalig durchlaufen lassen |
 | Recall findet nichts | `recall.py stats` — Index leer? `recall.py reindex --full` |
 | Memory-Sync committed nicht | `~/repos/clu-memory` ist git-Repo? `cd ~/repos/clu-memory && git status` |
+| Memory-Repo lokal/remote divergent | manuell `git pull --rebase`, ggf. Konflikte lösen. Multi-Maschine-Setup: ein Heartbeat pro Maschine, gestaffelte Zeiten (z.B. 04:00 / 04:15) |
 | Symlinks zeigen ins Leere | `setup-memory-sync.sh` erneut laufen lassen |
 | Git-Push schlägt mit Conflict fehl | Heartbeat macht `pull --rebase` vor `push`; manuell: `cd ~/repos/clu-memory && git pull --rebase && git push` |
+| Memory-Review-Report leer / nicht aktuell | Heartbeat Task 12 nur wenn `memory-review-pending.md` älter als `memory_review_interval_days` ist. Manueller Trigger: `rm ~/.clu/memory-review-pending.md && ~/.clu/heartbeat.sh` |
 
 ### Debugging-Hilfen
 
@@ -1246,7 +1262,8 @@ clu --dry-run mein-projekt    # falls implementiert; sonst:
 cat /tmp/clu/mein-projekt/CLAUDE.md  # während laufender Session
 
 # Welches Memory ist aktiv für ein Projekt?
-clu check mein-projekt
+ls ~/.clu/projects/mein-projekt/memory/
+ls ~/.clu/shared/memory/
 
 # Welche Personas sind verfügbar?
 ls ~/.clu/personas/
@@ -1287,32 +1304,42 @@ mit dem System leichter machen wenn man sie kennt. Vollständig in
 ## Anhang B — Daily Workflow (Beispiel)
 
 ```
-07:00   nightly Heartbeat ist gelaufen
-        → recall.db aktuell
-        → curator hat ggf. Daily-Logs für gestern Abend gesetzt
-        → Memory-Repo gepusht
+04:00   nightly Heartbeat
+        → Tasks 2-11 laufen
+        → Curator (Task 11) konsolidiert orphan sessions
+        → recall.db reindexed
+        → Memory-Repo committed + pushed
+        → ggf. Task 12 läuft (Sonntag): Memory-Health-Review
 
 09:30   Du startest:  clu mein-projekt
-        → clu lädt Persona (default für Projekt)
-        → injected User+Agent+Project Memory (L1)
-        → Session-Digest der letzten 2 Sessions
+        → Pre-Session-Curator (10–30s wenn pending, instant wenn nicht)
+        → ggf. Hinweis auf memory-review-pending.md
+        → Launcher injected Persona + Shared+Project Memory (L1)
+        → session-digest.py --last 3 --max-chars 800
         → Claude Code startet im Repo
 
 10:30   Beim Arbeiten:
         - Du triffst eine Architektur-Entscheidung
         - Agent sagt: "📝 Saved → projects/.../decisions.md · DEC-019"
         - Du sagst „sei direkter"
-        - Agent: "[Adjusted: A 6→4]" + loggt SIG-NNN
+        - Agent: "[Adjusted: A 6→4]" + loggt optional SIG-NNN in shared/memory/meta.md
 
 12:00   Du sagst „wechsle zu fedora"
-        - Agent schreibt Daily Log für mein-projekt
-        - Schreibt 'fedora' in /tmp/clu/switch-target
-        - Du tippst /exit
+        - Agent schreibt 'fedora' in /tmp/clu/switch-target
+        - Du tippst /exit (kein EoS-Ritual)
         - Adapter relauncht clu mit fedora
+        - Pre-Session-Curator konsolidiert mein-projekt-Session zu Daily-Log-Eintrag
+        - fedora-Memory wird geladen, Claude startet
 
-17:00   /exit ohne weiteren Switch
-        - Daily Log für fedora geschrieben
-        - L0-Abstracts aktualisiert
+17:00   /exit
+        - Nichts passiert lokal
+        - JSONL der Session bleibt unter ~/.claude/projects/
 
-(über Nacht)  Heartbeat läuft, alles wird konsolidiert.
+22:00   Du springst nochmal kurz in fedora rein
+        - Pre-Session-Curator findet die 12:00–17:00-Session, hängt sie als
+          neue Subsection an days/2026-05-02.md an (gleiches File wie davor)
+        - Memory wird mit aktuellem Stand geladen
+
+(über Nacht)  Heartbeat läuft, der Curator als Sicherheitsnetz holt nach
+              was am Tag vielleicht nicht erfasst wurde.
 ```

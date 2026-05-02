@@ -159,8 +159,9 @@ cmd_summarize() {
     fi
 
     echo "📝 Post-session summarizer for: $name"
-    echo "   This will ask the adapter to generate a session summary"
-    echo "   and propose appending it to journal.md."
+    echo "   Delegates to the adapter's summarize hook."
+    echo "   For claude-code this is a no-op — daily logs are written"
+    echo "   by the curator at the next session-start."
     echo ""
 
     # Delegate to adapter's summarize function
