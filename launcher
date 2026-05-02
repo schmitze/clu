@@ -5,13 +5,13 @@
 # Usage:
 #   clu                    → workspace mode (all projects, switch freely)
 #   clu <project>          → launch specific project
+#   clu resume <project>   → continue last claude session in project (no memory inject)
 #   clu new <name>         → create new project
 #   clu list               → list all projects
 #   clu summarize <project> → run post-session summarizer
-#   clu check <project>    → check memory staleness
-#   clu import             → import Claude Code session history
 #   clu bootstrap          → agent-guided onboarding interview
 #   clu heartbeat          → run maintenance heartbeat (or via cron)
+#   clu dashboard [port]   → optional web dashboard
 #   clu --adapter <name> <project>  → override adapter
 #   clu --persona <name> <project>  → override persona
 # ============================================================
@@ -59,7 +59,6 @@ fi
 
 DEFAULT_ADAPTER=$(yaml_get "$CONFIG_FILE" "default_adapter")
 DEFAULT_PROJECT=$(yaml_get "$CONFIG_FILE" "default_project")
-STALENESS_DAYS=$(yaml_get "$CONFIG_FILE" "memory_staleness_days")
 DYNAMIC_PERSONAS=$(yaml_get "$CONFIG_FILE" "dynamic_personas")
 
 # ── Argument parsing ──────────────────────────────────────────
@@ -151,40 +150,6 @@ cmd_new() {
     echo ""
 }
 
-cmd_check() {
-    local name="$1"
-    local project_dir="$AGENT_HOME/projects/$name"
-    if [[ ! -d "$project_dir" ]]; then
-        echo "❌ Project '$name' not found."
-        exit 1
-    fi
-
-    echo "🔍 Memory staleness check for: $name (threshold: ${STALENESS_DAYS}d)"
-    echo ""
-
-    local today_epoch
-    today_epoch=$(date +%s)
-
-    for mf in "$project_dir"/memory/*.md "$AGENT_HOME"/shared/memory/*.md "$AGENT_HOME"/shared/agent/*.md; do
-        [[ -f "$mf" ]] || continue
-        local verified
-        verified=$(grep "last_verified:" "$mf" 2>/dev/null | head -1 | sed 's/.*last_verified:[[:space:]]*//')
-        if [[ -n "$verified" ]]; then
-            local v_epoch
-            v_epoch=$(_date_to_epoch "$verified")
-            local age_days=$(( (today_epoch - v_epoch) / 86400 ))
-            local status="✅"
-            if [[ $age_days -ge $STALENESS_DAYS ]]; then
-                status="⚠️  STALE ($age_days days)"
-            fi
-            printf "  %-40s %s  (verified: %s)\n" "$(basename "$mf")" "$status" "$verified"
-        else
-            printf "  %-40s ❓  no last_verified header\n" "$(basename "$mf")"
-        fi
-    done
-    echo ""
-}
-
 cmd_summarize() {
     local name="$1"
     local project_dir="$AGENT_HOME/projects/$name"
@@ -244,11 +209,9 @@ assemble_workspace_context() {
         trait_reference+="Read this file when you need to interpret persona trait scores."
     fi
 
-    # Shared memory (user + agent)
+    # Shared memory
     local shared_memory=""
     shared_memory=$(_load_memory_l1 "$AGENT_HOME/shared/memory")
-    local agent_memory=""
-    [[ -d "$AGENT_HOME/shared/agent" ]] && agent_memory=$(_load_memory_l1 "$AGENT_HOME/shared/agent")
 
     # ── Build project index ───────────────────────────────────
     local project_index=""
@@ -331,9 +294,7 @@ assemble_workspace_context() {
     prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
     prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/[Workspace mode — project constraints loaded on switch]}"
     prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
-    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
     prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$workspace_block}"
-    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
     prompt="${prompt//\{\{REPO_PATH\}\}/[Workspace mode — repo path set per project]}"
 
     export AGENT_PROMPT="$prompt"
@@ -436,34 +397,13 @@ _enforce_budget() {
     fi
 
     # Start with current detail levels, then reduce tier by tier
-    local shared_memory agent_memory project_memory project_constraints
+    local shared_memory project_memory project_constraints
     shared_memory=$(_load_memory_l1 "$AGENT_HOME/shared/memory")
-    agent_memory=$(_load_memory_l1 "$AGENT_HOME/shared/agent" 2>/dev/null || echo "")
     project_constraints="${_BUDGET_PROJECT_CONSTRAINTS:-[Workspace mode — project constraints loaded on switch]}"
     project_memory="${_BUDGET_PROJECT_MEMORY:-}"
 
-    # ── Tier 1: Agent memory → abstracts only ─────────────────
-    agent_memory=$(_load_memory_l0 "$AGENT_HOME/shared/agent" 2>/dev/null || echo "")
-    local prompt="$core_prompt"
-    prompt="${prompt//\{\{PERSONA_BLOCK\}\}/$persona_block}"
-    prompt="${prompt//\{\{ROUTER_BLOCK\}\}/$router_block}"
-    prompt="${prompt//\{\{TRAIT_REFERENCE\}\}/$trait_reference}"
-    prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
-    prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/$project_constraints}"
-    prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
-    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
-    prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$project_memory}"
-    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
-    prompt="${prompt//\{\{REPO_PATH\}\}/${AGENT_REPO_PATH:-}}"
-    prompt="${prompt//\{\{AGENT_HOME\}\}/$AGENT_HOME}"
-
-    if [[ "${#prompt}" -le "$PROMPT_BUDGET" ]]; then
-        echo "   ✓ Tier 1 (compact agent memory): ${#prompt} chars"
-        export AGENT_PROMPT="$prompt"
-        return 0
-    fi
-
-    # ── Tier 2: Compact project index ─────────────────────────
+    local prompt
+    # ── Tier 1: Compact project index ─────────────────────────
     if [[ "$AGENT_PROJECT_TYPE" == "workspace" ]]; then
         local compact_index
         compact_index=$(_build_compact_project_index)
@@ -483,19 +423,17 @@ _enforce_budget() {
     prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
     prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/$project_constraints}"
     prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
-    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
     prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$project_memory}"
-    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
     prompt="${prompt//\{\{REPO_PATH\}\}/${AGENT_REPO_PATH:-}}"
     prompt="${prompt//\{\{AGENT_HOME\}\}/$AGENT_HOME}"
 
     if [[ "${#prompt}" -le "$PROMPT_BUDGET" ]]; then
-        echo "   ✓ Tier 2 (compact project index): ${#prompt} chars"
+        echo "   ✓ Tier 1 (compact project index): ${#prompt} chars"
         export AGENT_PROMPT="$prompt"
         return 0
     fi
 
-    # ── Tier 3: Shared memory → abstracts only ────────────────
+    # ── Tier 2: Shared memory → abstracts only ────────────────
     shared_memory=$(_load_memory_l0 "$AGENT_HOME/shared/memory")
 
     prompt="$core_prompt"
@@ -505,14 +443,12 @@ _enforce_budget() {
     prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
     prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/$project_constraints}"
     prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
-    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
     prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$project_memory}"
-    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
     prompt="${prompt//\{\{REPO_PATH\}\}/${AGENT_REPO_PATH:-}}"
     prompt="${prompt//\{\{AGENT_HOME\}\}/$AGENT_HOME}"
 
     if [[ "${#prompt}" -le "$PROMPT_BUDGET" ]]; then
-        echo "   ✓ Tier 3 (compact shared memory): ${#prompt} chars"
+        echo "   ✓ Tier 2 (compact shared memory): ${#prompt} chars"
         export AGENT_PROMPT="$prompt"
         return 0
     fi
@@ -627,12 +563,6 @@ assemble_context() {
     local shared_memory=""
     shared_memory=$(_load_memory_l1 "$AGENT_HOME/shared/memory")
 
-    # Agent memory (shared/agent/)
-    local agent_memory=""
-    if [[ -d "$AGENT_HOME/shared/agent" ]]; then
-        agent_memory=$(_load_memory_l1 "$AGENT_HOME/shared/agent")
-    fi
-
     # Project memory — skip L1 injection if Claude Code Auto-Memory exists
     # (Auto-Memory is loaded natively by Claude Code, no need to duplicate)
     local project_memory=""
@@ -684,9 +614,7 @@ assemble_context() {
     prompt="${prompt//\{\{GLOBAL_CONSTRAINTS\}\}/$global_constraints}"
     prompt="${prompt//\{\{PROJECT_CONSTRAINTS\}\}/$project_constraints}"
     prompt="${prompt//\{\{SHARED_MEMORY\}\}/$shared_memory}"
-    prompt="${prompt//\{\{AGENT_MEMORY\}\}/$agent_memory}"
     prompt="${prompt//\{\{PROJECT_MEMORY\}\}/$project_memory}"
-    prompt="${prompt//\{\{STALENESS_DAYS\}\}/$STALENESS_DAYS}"
     prompt="${prompt//\{\{REPO_PATH\}\}/$resolved_repo}"
 
     # Export for adapter use
@@ -717,10 +645,6 @@ main() {
             cmd_new "$PROJECT"
             exit 0
             ;;
-        check)
-            cmd_check "$PROJECT"
-            exit 0
-            ;;
         summarize)
             cmd_summarize "$PROJECT"
             exit 0
@@ -735,9 +659,25 @@ main() {
             bash "$AGENT_HOME/heartbeat.sh" "${PROJECT:-}"
             exit 0
             ;;
-        import)
-            bash "$AGENT_HOME/import.sh" "${PROJECT:-}"
-            exit 0
+        resume)
+            if [[ -z "$PROJECT" ]]; then
+                echo "Usage: clu resume <project>" >&2
+                exit 1
+            fi
+            local project_dir="$AGENT_HOME/projects/$PROJECT"
+            if [[ ! -d "$project_dir" ]]; then
+                echo "❌ Project '$PROJECT' not found." >&2
+                exit 1
+            fi
+            local repo_path
+            repo_path=$(yaml_get "$project_dir/project.yaml" repo_path)
+            repo_path="${repo_path/#\~/$HOME}"
+            if [[ -z "$repo_path" || ! -d "$repo_path" ]]; then
+                echo "❌ repo_path missing or invalid for $PROJECT." >&2
+                exit 1
+            fi
+            cd "$repo_path"
+            exec claude --continue
             ;;
         dashboard)
             python3 "$AGENT_HOME/dashboard.py" "${PROJECT:-3141}"
@@ -750,6 +690,36 @@ main() {
         if [[ -n "$DEFAULT_PROJECT" && "$DEFAULT_PROJECT" != "null" ]]; then
             PROJECT="$DEFAULT_PROJECT"
         fi
+    fi
+
+    # ── Pre-session curator: consolidate orphan sessions ─────────
+    # Daily logs are written here from previous transcripts before
+    # memory is loaded into the new prompt.
+    local curator_bin="$AGENT_HOME/tools/curator/curator.py"
+    if [[ -x "$curator_bin" ]]; then
+        echo "🤖 Pre-session memory consolidation..."
+        if curator_out=$(timeout 60 "$curator_bin" run --limit 5 2>&1); then
+            local n_logs n_blocks
+            n_logs=$(echo "$curator_out" | grep -c "wrote daily log" 2>/dev/null || echo 0)
+            n_blocks=$(echo "$curator_out" | grep -cE "^  📝 " 2>/dev/null || echo 0)
+            if [[ "${n_logs:-0}" -gt 0 || "${n_blocks:-0}" -gt 0 ]]; then
+                echo "   ✓ Curator: ${n_logs} daily logs, ${n_blocks} blocks"
+            else
+                echo "   ✓ Nothing to consolidate"
+            fi
+        else
+            echo "   ⚠ Curator skipped (timeout or error)"
+        fi
+        echo ""
+    fi
+
+    # ── Surface pending memory-review report (if any) ────────────
+    local review_report="$AGENT_HOME/memory-review-pending.md"
+    if [[ -f "$review_report" ]]; then
+        local report_age=$(( ($(date +%s) - $(stat -c %Y "$review_report" 2>/dev/null || stat -f %m "$review_report")) / 86400 ))
+        echo "📋 Memory health review pending (${report_age}d old): $review_report"
+        echo "   Open it to see what Opus suggests, then \`rm\` when done."
+        echo ""
     fi
 
     if [[ -z "$PROJECT" ]]; then
@@ -776,9 +746,6 @@ main() {
         echo "   Type: $AGENT_PROJECT_TYPE"
         echo "   Adapter: $ADAPTER"
         echo ""
-
-        # Run staleness check (quick, non-blocking)
-        cmd_check "$PROJECT" 2>/dev/null || true
     fi
 
     # Dispatch to adapter

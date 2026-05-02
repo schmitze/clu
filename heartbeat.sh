@@ -83,58 +83,21 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     exit 1
 fi
 
-STALENESS_DAYS=$(grep "memory_staleness_days:" "$CONFIG_FILE" 2>/dev/null \
-    | head -1 | sed 's/.*memory_staleness_days:[[:space:]]*//' || true)
-STALENESS_DAYS="${STALENESS_DAYS:-30}"
+REVIEW_INTERVAL_DAYS=$(grep "memory_review_interval_days:" "$CONFIG_FILE" 2>/dev/null \
+    | head -1 | sed 's/.*memory_review_interval_days:[[:space:]]*//' || true)
+REVIEW_INTERVAL_DAYS="${REVIEW_INTERVAL_DAYS:-7}"
 
-# ── Task 1: Memory staleness across all projects ─────────────
+# ── Task 1: Project list ──────────────────────────────────────
 
-log "📋 Checking memory staleness (threshold: ${STALENESS_DAYS}d)..."
-
-stale_count=0
-today_epoch=$(date +%s)
-
-check_staleness() {
-    local file="$1"
-    local verified
-    verified=$(grep "last_verified:" "$file" 2>/dev/null | head -1 | sed 's/.*last_verified:[[:space:]]*//' || true)
-    if [[ -n "$verified" ]]; then
-        local v_epoch
-        v_epoch=$(_date_to_epoch "$verified")
-        local age_days=$(( (today_epoch - v_epoch) / 86400 ))
-        if [[ $age_days -ge $STALENESS_DAYS ]]; then
-            log "  ⚠ STALE (${age_days}d): $file"
-            stale_count=$((stale_count + 1))
-        fi
-    fi
-}
-
-# Shared memory
-for mf in "$AGENT_HOME"/shared/memory/*.md "$AGENT_HOME"/shared/agent/*.md; do
-    [[ -f "$mf" ]] || continue
-    check_staleness "$mf"
-done
-
-# Project memory
 if [[ -n "$TARGET_PROJECT" ]]; then
     project_dirs=("$AGENT_HOME/projects/$TARGET_PROJECT")
 else
     project_dirs=("$AGENT_HOME"/projects/*/)
 fi
 
-for project_dir in "${project_dirs[@]}"; do
-    [[ -d "$project_dir" ]] || continue
-    for mf in "$project_dir"/memory/*.md; do
-        [[ -f "$mf" ]] || continue
-        check_staleness "$mf"
-    done
-done
-
-if [[ $stale_count -eq 0 ]]; then
-    log "  ✅ All memory files are fresh."
-else
-    log "  ⚠ $stale_count stale file(s) found."
-fi
+# Memory-staleness checking removed 2026-05-02. Date-based warnings
+# were never acted on. A model-based health review (Task 12) is the
+# replacement: Opus reads the memory and proposes updates directly.
 
 # ── Task 2: Daily log hygiene ─────────────────────────────────
 
@@ -253,7 +216,6 @@ _scan_injection() {
 }
 
 for mf in "$AGENT_HOME"/shared/memory/*.md \
-          "$AGENT_HOME"/shared/agent/*.md \
           "$AGENT_HOME"/personas/*.md; do
     [[ -f "$mf" ]] || continue
     _scan_injection "$mf"
@@ -326,8 +288,7 @@ _scan_credentials() {
     fi
 }
 
-for mf in "$AGENT_HOME"/shared/memory/*.md \
-          "$AGENT_HOME"/shared/agent/*.md; do
+for mf in "$AGENT_HOME"/shared/memory/*.md; do
     [[ -f "$mf" ]] || continue
     _scan_credentials "$mf"
 done
@@ -420,7 +381,7 @@ if [[ $security_issues -gt 0 ]]; then
     BASH_FINDINGS="The bash pre-checks found $security_issues issue(s). Review the heartbeat log at $AGENT_HOME/heartbeat.log for details."
 fi
 
-SECURITY_REPORT="$AGENT_HOME/shared/agent/security-report.md"
+SECURITY_REPORT="$AGENT_HOME/security-report.md"
 
 AGENT_PROMPT=$(cat << 'SECPROMPT'
 # clu Heartbeat — Deep Security Audit
@@ -570,8 +531,7 @@ MEMORY_FILES=""
 TOTAL_LINES=0
 LARGE_FILES=""
 
-for mf in "$AGENT_HOME"/shared/memory/*.md \
-          "$AGENT_HOME"/shared/agent/*.md; do
+for mf in "$AGENT_HOME"/shared/memory/*.md; do
     [[ -f "$mf" ]] || continue
     lines=$(wc -l < "$mf")
     TOTAL_LINES=$((TOTAL_LINES + lines))
@@ -745,6 +705,103 @@ if [[ -x "$CURATOR_BIN" ]]; then
     fi
 else
     log "  ⬜ curator.py not found at $CURATOR_BIN, skipping."
+fi
+
+# ── Task 12: Memory health review (weekly, top model) ─────────
+
+REVIEW_REPORT="$AGENT_HOME/memory-review-pending.md"
+REVIEW_DUE=true
+if [[ -f "$REVIEW_REPORT" ]]; then
+    age_days=$(( ($(date +%s) - $(stat -c %Y "$REVIEW_REPORT" 2>/dev/null || stat -f %m "$REVIEW_REPORT")) / 86400 ))
+    [[ $age_days -lt $REVIEW_INTERVAL_DAYS ]] && REVIEW_DUE=false
+fi
+
+if [[ "$REVIEW_DUE" == "true" ]] && command -v claude &>/dev/null; then
+    log "🧠 Memory health review (weekly, claude-opus-4-7)..."
+
+    # Collect all memory files, with size headers
+    MEMORY_INVENTORY=""
+    MEMORY_BODIES=""
+    for mf in "$AGENT_HOME"/shared/memory/*.md \
+              "$AGENT_HOME"/projects/*/memory/*.md \
+              "$AGENT_HOME"/projects/*/memory/days/*.md; do
+        [[ -f "$mf" ]] || continue
+        rel="${mf#$AGENT_HOME/}"
+        lines=$(wc -l < "$mf")
+        MEMORY_INVENTORY+="- $rel ($lines lines)"$'\n'
+        MEMORY_BODIES+="### $rel"$'\n\n'
+        MEMORY_BODIES+=$(cat "$mf")
+        MEMORY_BODIES+=$'\n\n---\n\n'
+    done
+
+    REVIEW_PROMPT=$(cat << 'REVIEWEOF'
+# clu Memory Health Review
+
+You are running as a non-interactive reviewer. Your single output is a
+markdown report. No conversation, no chat tone.
+
+## Task
+
+Review every memory file below for:
+- **Stale facts** — versions, paths, decisions that are clearly outdated
+- **Redundancy** — same fact in multiple files; suggest consolidation
+- **Conflicts** — contradictions between files
+- **Abstract drift** — `abstract:` field in frontmatter no longer matches content
+- **Quality** — entries that are too vague, too verbose, or factually questionable
+
+## Output
+
+Write a report with these sections (skip a section if empty — do not pad):
+
+```
+# Memory Health Review — YYYY-MM-DD
+
+## Stale or outdated
+- file: <rel-path> · entry: <id-or-section> · suggestion: <what to update or remove>
+
+## Redundancy
+- files: <a>, <b> · same content: <topic> · suggestion: keep <a>, drop <b> (or merge)
+
+## Conflicts
+- files: <a>, <b> · conflict: <description> · resolution: <which is current>
+
+## Abstract drift
+- file: <rel-path> · current abstract: "<x>" · suggested abstract: "<y>"
+
+## Quality
+- file: <rel-path> · entry: <id> · issue: <vague|verbose|questionable> · suggestion: <action>
+```
+
+Be terse. One bullet per finding. No prose paragraphs. If everything looks
+good, output a single line "Memory looks clean — no findings."
+
+## Inventory
+
+INVENTORY_PLACEHOLDER
+
+## Bodies
+
+BODIES_PLACEHOLDER
+REVIEWEOF
+    )
+    REVIEW_PROMPT="${REVIEW_PROMPT//INVENTORY_PLACEHOLDER/$MEMORY_INVENTORY}"
+    REVIEW_PROMPT="${REVIEW_PROMPT//BODIES_PLACEHOLDER/$MEMORY_BODIES}"
+
+    if echo "$REVIEW_PROMPT" | timeout 900 claude --dangerously-skip-permissions \
+            --model claude-opus-4-7 -p > "$REVIEW_REPORT" 2>>"$AGENT_HOME/heartbeat-agent.log"; then
+        n_findings=$(grep -cE "^- " "$REVIEW_REPORT" 2>/dev/null || echo 0)
+        if grep -q "Memory looks clean" "$REVIEW_REPORT" 2>/dev/null; then
+            log "  ✅ Memory clean. No findings."
+        else
+            log "  ⚠ Review report: $n_findings findings → $REVIEW_REPORT"
+        fi
+    else
+        log "  ⚠ Review failed or timed out (15 min cap)."
+    fi
+else
+    if [[ "$REVIEW_DUE" != "true" ]]; then
+        log "🧠 Memory health review skipped (last run < ${REVIEW_INTERVAL_DAYS}d ago)."
+    fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────

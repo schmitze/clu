@@ -52,20 +52,10 @@ EOF
 
     cat >> "$claude_md" << EOF
 
-**User memory (shared):**
+**Shared memory:**
 EOF
 
     for mf in "$AGENT_HOME"/shared/memory/*.md; do
-        [[ -f "$mf" ]] || continue
-        echo "- \`$mf\`" >> "$claude_md"
-    done
-
-    cat >> "$claude_md" << EOF
-
-**Agent memory (shared):**
-EOF
-
-    for mf in "$AGENT_HOME"/shared/agent/*.md; do
         [[ -f "$mf" ]] || continue
         echo "- \`$mf\`" >> "$claude_md"
     done
@@ -122,19 +112,19 @@ For the full transcript, run:
 EOF
             echo "🔄 Injected session recovery context (last session was interrupted)"
         elif [[ -x "$digest_script" ]]; then
-            # Clean exit — inject short digest instead
+            # Clean exit — inject digest of recent sessions for continuity
             local digest
-            digest=$(python3 "$digest_script" "$launch_dir" --last 1 --max-chars 300 --format md 2>/dev/null)
+            digest=$(python3 "$digest_script" "$launch_dir" --last 3 --max-chars 800 --format md 2>/dev/null)
             if [[ -n "$digest" ]]; then
                 cat >> "$launch_dir/CLAUDE.md" << EOF
 
 ---
 
-## Last Session Digest (auto-injected)
+## Recent Sessions (auto-injected)
 
 $digest
 EOF
-                echo "📜 Injected last session digest into CLAUDE.md"
+                echo "📜 Injected recent-session digest into CLAUDE.md"
             fi
         fi
     fi
@@ -210,56 +200,14 @@ EOF
         fi
     fi
 
-    # ── Post-session prompt ───────────────────────────────────
-
-    local auto_summarize
-    auto_summarize=$(grep "auto_summarize:" "$AGENT_HOME/config.yaml" 2>/dev/null \
-        | head -1 | sed 's/.*auto_summarize:[[:space:]]*//')
-
-    if [[ "$auto_summarize" == "true" ]]; then
-        echo ""
-        read -p "📝 Run post-session summarizer? (y/n) " -n 1 -r
-        echo ""
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            _adapter_quick_journal "$session_start"
-        fi
-    fi
+    # No post-session ritual. clu-curator runs at the next session-start
+    # and consolidates this session's transcript into a daily-log entry.
 
     return $exit_code
 }
 
-# ── Summarizer (uses claude non-interactively) ────────────────
-
 adapter_summarize() {
-    local project_dir="${1:-$AGENT_PROJECT_DIR}"
-    local agent_home="${2:-$AGENT_HOME}"
-    _adapter_quick_journal "$(date +"%Y-%m-%d %H:%M")"
-}
-
-_adapter_quick_journal() {
-    local session_start="${1:-unknown}"
-    local journal_file="$AGENT_PROJECT_DIR/memory/journal.md"
-    mkdir -p "$(dirname "$journal_file")"
-
-    echo ""
-    echo "Quick session summary (what did you work on?):"
-    read -r summary
-
-    if [[ -n "$summary" ]]; then
-        local entry
-        entry=$(cat << EOF
-
-## Session – $session_start
-**Project:** $AGENT_PROJECT_NAME
-**Persona(s):** $AGENT_PERSONA
-**Summary:** $summary
-**Next steps:** [fill in]
-
-EOF
-        )
-        echo "$entry" >> "$journal_file"
-        echo "✅ Appended to journal.md"
-    else
-        echo "⏭ Skipped."
-    fi
+    # No-op. Daily-log generation is handled by clu-curator
+    # (Heartbeat task 11, also invoked at session-start by the launcher).
+    return 0
 }

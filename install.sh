@@ -46,7 +46,6 @@ _copy_framework_files() {
     cp "$src/bootstrap.sh" "$dst/bootstrap.sh"
     cp "$src/heartbeat.sh" "$dst/heartbeat.sh"
     cp "$src/create-persona.sh" "$dst/create-persona.sh"
-    cp "$src/import.sh" "$dst/import.sh"
     cp "$src/dashboard.py" "$dst/dashboard.py"
     cp -rT "$src/adapters" "$dst/adapters"
     cp -rT "$src/personas" "$dst/personas"
@@ -68,8 +67,8 @@ _copy_framework_files() {
 }
 
 if [[ "$UPGRADE" == "true" ]]; then
-    # Preserve projects/, shared/memory/, shared/agent/, and config.yaml on upgrade
-    echo "  ℹ Preserving config.yaml, projects/, shared/memory/, shared/agent/"
+    # Preserve projects/, shared/memory/, and config.yaml on upgrade
+    echo "  ℹ Preserving config.yaml, projects/, shared/memory/"
     _copy_framework_files "$SCRIPT_DIR" "$INSTALL_DIR"
 else
     mkdir -p "$INSTALL_DIR"
@@ -77,11 +76,10 @@ else
     # Only copy config.yaml and memory scaffolds on fresh install
     cp "$SCRIPT_DIR/config.yaml" "$INSTALL_DIR/config.yaml"
     cp -r "$SCRIPT_DIR/shared/memory/" "$INSTALL_DIR/shared/memory/"
-    cp -r "$SCRIPT_DIR/shared/agent/" "$INSTALL_DIR/shared/agent/"
     cp -r "$SCRIPT_DIR/projects/" "$INSTALL_DIR/projects/"
 fi
 
-chmod +x "$INSTALL_DIR/launcher" "$INSTALL_DIR/bootstrap.sh" "$INSTALL_DIR/heartbeat.sh" "$INSTALL_DIR/import.sh" "$INSTALL_DIR/session-recovery.py" "$INSTALL_DIR/session-digest.py" "$INSTALL_DIR/migrate.sh"
+chmod +x "$INSTALL_DIR/launcher" "$INSTALL_DIR/bootstrap.sh" "$INSTALL_DIR/heartbeat.sh" "$INSTALL_DIR/session-recovery.py" "$INSTALL_DIR/session-digest.py" "$INSTALL_DIR/migrate.sh"
 
 # ── Create the `clu` symlink/alias ─────────────────────────
 

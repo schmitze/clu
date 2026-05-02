@@ -355,21 +355,22 @@ Output ONE JSON object. Schema:
 
 EXTRACTION RULES:
 
-1. DAILY LOG: Generate one ONLY if not already on file. Use this format exactly:
----
-date: YYYY-MM-DD
-project: <name>
-personas_used: [<list, e.g. implementer>]
----
-# YYYY-MM-DD
-## What happened
+1. DAILY LOG SECTION: Generate ONLY the section for THIS session — no
+   YAML frontmatter, no date title (the file already has those, or
+   gets them auto-created). Format exactly:
+## Session HH:MM–HH:MM · <session_id_short>
+### What happened
 - bullet points covering main activities
-## Decisions made
+### Decisions made
 - bullets, or "None"
-## Open threads
+### Open threads
 - bullets, or "None"
-## Next session
+### Next session
 - bullets, or "None"
+
+(Replace HH:MM–HH:MM with the actual session time range from the
+transcript timestamps. Replace <session_id_short> with the first
+8 chars of the session_id provided in metadata.)
 
 2. DEC (Decision): Extract ONLY if user EXPLICITLY confirmed (e.g., "ok", "ja", "let's go with X", "y", typed final acceptance). Do NOT extract proposals, ideas under discussion, or things the agent suggested but user didn't confirm. Required fields: Date, Status (accepted|planned|proposed), Context, Decision, Alternatives, Consequences. Confidence high (≥0.85) only for clear final decisions.
 
@@ -511,12 +512,33 @@ def _bump_entry_count(text: str) -> str:
     return f"---\n{new_fm}\n---\n" + text[m.end():]
 
 
-def write_daily_log(project: str, date: str, content: str, dry_run: bool) -> Path:
+def write_daily_log(project: str, date: str, session_id: str,
+                    section_content: str, dry_run: bool) -> Path:
+    """Append a session section to the day's log, creating the file if needed.
+
+    Multiple sessions on the same day live in the same file as
+    `## Session …` subsections. Idempotent: if a section for this
+    session_id is already present, no-op.
+    """
     target = _project_memory_dir(project) / "days" / f"{date}.md"
     if dry_run:
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
+    short_id = session_id[:8]
+
+    if target.exists():
+        existing = target.read_text(encoding="utf-8")
+        if short_id in existing:
+            return target  # already recorded
+        if not existing.endswith("\n"):
+            existing += "\n"
+        target.write_text(existing + "\n" + section_content + "\n", encoding="utf-8")
+    else:
+        header = (
+            f"---\ndate: {date}\nproject: {project}\n---\n\n"
+            f"# {date}\n"
+        )
+        target.write_text(header + "\n" + section_content + "\n", encoding="utf-8")
     return target
 
 
@@ -621,10 +643,13 @@ def process_session(
         result.error = last_err or "unknown classifier error"
         return result
 
-    # Daily log
+    # Daily log: append this session as a subsection (file may already
+    # exist for this date with prior sessions). The classifier returns
+    # only the section, the file's frontmatter is created on first write.
     dl = parsed.get("daily_log") or {}
-    if dl.get("should_write") and dl.get("content") and not daily_log_exists:
-        path = write_daily_log(s.project, s.date, dl["content"], dry_run)
+    if dl.get("should_write") and dl.get("content"):
+        path = write_daily_log(s.project, s.date, s.session_id,
+                               dl["content"], dry_run)
         result.daily_log_written = path
         if not dry_run:
             log_action(f"daily-log {s.project}/{s.date} <- session {s.session_id[:8]}")
