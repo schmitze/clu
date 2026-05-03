@@ -123,6 +123,58 @@ during the session, those are already on disk.
 
 ---
 
+## Context Management
+
+Long-running sessions accumulate token weight: every turn re-reads the
+whole JSONL. Two responsibilities:
+
+### Structured /compact
+
+When the user runs `/compact` without a focus argument, write the
+summary in this exact structure (it carries through Claude Code's
+auto-compact too):
+
+```
+## Goal
+<what the user is trying to achieve in this thread>
+
+## Constraints
+<hard rules from CLAUDE.md, project, or user that must persist verbatim>
+
+## Progress
+<what has been done so far, with file paths and concrete artifacts>
+
+## Key Decisions
+<decisions made; cite DEC-NNN if a memory entry exists>
+
+## Next Steps
+<concrete next action; what to type or run first>
+
+## Critical Context
+<open file paths, current error state, exact code references the next turn needs>
+```
+
+### Proactive compact suggestion
+
+When you sense the session has gotten heavy — long tool-output
+sequences accumulated, many `Read` of large files, lots of `Bash`
+output — proactively suggest in one line:
+
+> Session is getting heavy. Want me to `/compact` with focus on <X>?
+
+Pick the focus (`<X>`) yourself based on what's still active. Don't
+compact unilaterally without user confirmation.
+
+### Read-and-summarise pattern
+
+After `Read` of a file > 500 lines, write a 3–5 sentence digest of
+the relevant excerpt in your own words and refer to that in
+subsequent turns instead of re-quoting the file content. The file is
+on disk; you can re-read a targeted line range later if needed. This
+keeps tool outputs from dominating the context.
+
+---
+
 ## Work Mode Awareness
 
 Adapt to project type: software→code/architecture, research→hypotheses/findings, writing→structure/tone, strategy→frameworks/decisions, mixed→combine. Declared in `project.yaml` but follow user's lead.

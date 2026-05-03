@@ -177,6 +177,32 @@ Wenn du den Agent korrigieren willst: sag's einfach, er revertiert
 oder editiert. Memory-Files sind Markdown — du kannst auch direkt
 mit `$EDITOR` ran.
 
+### Lange Sessions / Context-Management
+
+Claude Code lädt bei jedem Turn die komplette JSONL-History — Token-Verbrauch
+wächst linear. Bei OpenCode (geplant) wird das automatisch durch Tool-Output-Pruning
+und geschützte Zonen abgefedert; in Claude Code ist Disziplin gefragt.
+
+**Empfohlener Workflow:**
+
+| Situation | Aktion |
+|---|---|
+| Klares Thema fertig | `/exit`. Auto-Resume-Detector entscheidet später |
+| Pause innerhalb eines Vorhabens (Stunden bis 1 Tag) | `/exit` + später `clu <projekt>` (Auto-Resume holt verbatim) |
+| Themen-Wechsel im selben Projekt am gleichen Tag | `/clear` (gleiche Session, frischer Kontext, CLAUDE.md bleibt) |
+| Session ist lang aber thematisch zusammenhängend | `/compact "behalte den aktuellen Plan, drop file contents"` — Fokus-Argument zwingt zur Selektion |
+| Du fragst nicht aktiv weiter | `/exit`. Tokens sparen ist der größte Hebel. |
+
+**core-prompt.md weist den Agent an:**
+
+- Bei `/compact` ohne Fokus → strukturiertes Summary nach OpenCode-Schema (Goal / Constraints / Progress / Key Decisions / Next Steps / Critical Context)
+- Bei spürbar schwerer Session → Compact mit Fokus-Vorschlag in einer Zeile, nicht eigenmächtig
+- Nach `Read` von Files > 500 Zeilen → 3–5 Sätze Digest in eigenen Worten statt Inhalt zu re-quoten
+
+**Was diese Maßnahmen NICHT ersetzen:**
+
+Tool-Output-Pruning auf Frontend-Ebene (das macht OpenCode automatisch im Hintergrund) ist von außen nicht nachrüstbar. Bei langen Multi-Tag-Sessions in Claude Code bleibt nur Disziplin oder Migration.
+
 ### Bootstrap (Onboarding-Interview)
 
 ```bash
