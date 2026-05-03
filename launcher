@@ -4,8 +4,10 @@
 # ============================================================
 # Usage:
 #   clu                    → workspace mode (all projects, switch freely)
-#   clu <project>          → launch specific project
-#   clu resume <project>   → continue last claude session in project (no memory inject)
+#   clu <project>          → launch specific project (auto-resumes if last
+#                            session ended mid-flow, see --fresh to skip)
+#   clu --fresh <project>  → force a fresh session, skip auto-resume check
+#   clu resume <project>   → always continue last claude session (no memory inject)
 #   clu new <name>         → create new project
 #   clu list               → list all projects
 #   clu summarize <project> → run post-session summarizer
@@ -67,6 +69,7 @@ ADAPTER="$DEFAULT_ADAPTER"
 PERSONA_OVERRIDE=""
 COMMAND=""
 PROJECT=""
+FRESH_FORCE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -78,7 +81,11 @@ while [[ $# -gt 0 ]]; do
             PERSONA_OVERRIDE="$2"
             shift 2
             ;;
-        new|list|summarize|check|bootstrap|heartbeat|import|dashboard)
+        --fresh)
+            FRESH_FORCE=true
+            shift
+            ;;
+        new|list|summarize|resume|bootstrap|heartbeat|dashboard)
             COMMAND="$1"
             shift
             PROJECT="${1:-}"
@@ -690,6 +697,34 @@ main() {
     if [[ -z "$PROJECT" ]]; then
         if [[ -n "$DEFAULT_PROJECT" && "$DEFAULT_PROJECT" != "null" ]]; then
             PROJECT="$DEFAULT_PROJECT"
+        fi
+    fi
+
+    # ── Auto-resume detection ────────────────────────────────────
+    # If the last session in this project ended mid-flow (mid-debate,
+    # mid-task), Claude Haiku decides whether to `claude --continue`
+    # the verbatim thread instead of starting a fresh session.
+    # Skipped: workspace mode, --fresh override, non-claude-code adapter.
+    local resume_check="$AGENT_HOME/tools/resume-detector/check.py"
+    if [[ -n "$PROJECT" && "$FRESH_FORCE" != "true" && "$ADAPTER" == "claude-code" && -x "$resume_check" ]]; then
+        local _project_dir="$AGENT_HOME/projects/$PROJECT"
+        if [[ -d "$_project_dir" ]]; then
+            local _repo_path
+            _repo_path=$(yaml_get "$_project_dir/project.yaml" repo_path)
+            _repo_path="${_repo_path/#\~/$HOME}"
+            if [[ -n "$_repo_path" && "$_repo_path" != "null" && -d "$_repo_path" ]]; then
+                echo "🔍 Checking last session for mid-flow continuation..."
+                local _verdict
+                _verdict=$(timeout 25 "$resume_check" "$_repo_path" 2>/dev/null | tail -1)
+                if [[ "$_verdict" == "resume" ]]; then
+                    echo "   ↪ Last session was mid-flow — resuming verbatim."
+                    echo "     (Use 'clu --fresh $PROJECT' to start a new session instead.)"
+                    cd "$_repo_path"
+                    exec claude --continue
+                fi
+                echo "   ✓ Last session looked closed — starting fresh."
+                echo ""
+            fi
         fi
     fi
 

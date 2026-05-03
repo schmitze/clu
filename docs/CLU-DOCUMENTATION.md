@@ -107,8 +107,9 @@ clu mein-projekt                    # Erste Session starten
 | Befehl | Modus |
 |---|---|
 | `clu` | Workspace — Agent sieht alle Projekte, kann zwischen ihnen navigieren |
-| `clu <projekt>` | Projekt — fokussiert auf ein Projekt (lädt Memory, injectet Persona) |
-| `clu resume <projekt>` | Setzt den letzten Claude-Thread fort (`claude --continue`) — kein Memory-Inject, voller Thread, für kurze Pausen |
+| `clu <projekt>` | Projekt — Auto-Resume-Check (Haiku, ~10–15s); bei mid-flow → fortsetzen, sonst frische Session mit Memory + Persona |
+| `clu --fresh <projekt>` | Auto-Resume-Check überspringen, immer frische Session |
+| `clu resume <projekt>` | Letzten Claude-Thread bedingungslos fortsetzen (`claude --continue`) — kein Memory-Inject, voller Thread |
 | `clu --persona <name> <projekt>` | Override Persona |
 | `clu --adapter <name> <projekt>` | Override Adapter (`claude-code`, `aider`, `cursor`, …) |
 
@@ -558,7 +559,18 @@ Subcommand, Projektname.
 - Projekt explizit → Existenz validieren
 - Kein Projekt → `default_project` aus `config.yaml`, sonst Workspace
 
-**Phase 3 — Pre-Session Curator.** Bevor Memory geladen wird:
+**Phase 3 — Auto-Resume-Check (nur Single-Project + claude-code-Adapter).**
+`tools/resume-detector/check.py <repo_path>` ruft Claude Haiku 4.5
+über die Subscription (`claude -p --model claude-haiku-4-5`) und fragt:
+„war die letzte Session abgeschlossen oder mitten drin?". Liest die
+letzten 10 Turns aus dem neuesten JSONL des Projekts. Bias auf
+`resume` bei Unklarheit. Bei `resume` → `cd repo_path && exec claude --continue`,
+voller Thread, kein Memory-Inject, alles weitere übersprungen. Bei
+`fresh` (oder Timeout 25s, oder `--fresh` flag) → normaler Flow weiter.
+Latenz ~10–15s wegen claude-CLI-Subprocess-Overhead. Übersprungen im
+Workspace-Mode.
+
+**Phase 4 — Pre-Session Curator.** Bevor Memory geladen wird:
 `tools/curator/curator.py run --limit 5` (timeout 60s). Findet
 orphan Sessions, schreibt Daily-Log-Sektionen + Blocks aus
 Transkripten. Memory-Files sind danach aktuell. Wenn pending
