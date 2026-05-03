@@ -6,5 +6,7 @@ After=network-online.target
 Type=oneshot
 ExecStart=%h/.clu/heartbeat.sh
 Environment=CLU_HOME=%h/.clu
-# Give the agent-driven tasks enough time
-TimeoutStartSec=600
+# Give the agent-driven tasks enough time. Tasks 6, 7 and 12 each cap at
+# 10–15 min internally; with curator and recall on top, a full run can hit
+# ~35 min. 40 min keeps a safety margin without making a hung agent invisible.
+TimeoutStartSec=2400
