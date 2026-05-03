@@ -108,7 +108,7 @@ clu mein-projekt                    # Erste Session starten
 |---|---|
 | `clu` | Workspace — Agent sieht alle Projekte, kann zwischen ihnen navigieren |
 | `clu <projekt>` | Projekt — Auto-Resume-Check (Haiku, ~10–15s); bei mid-flow → fortsetzen, sonst frische Session mit Memory + Persona |
-| `clu --fresh <projekt>` | Auto-Resume-Check überspringen, immer frische Session |
+| `clu --fresh <projekt>` / `clu fresh <projekt>` | Auto-Resume-Check überspringen, immer frische Session (Flag und Subcommand-Alias verhalten sich gleich) |
 | `clu resume <projekt>` | Letzten Claude-Thread bedingungslos fortsetzen (`claude --continue`) — kein Memory-Inject, voller Thread |
 | `clu --persona <name> <projekt>` | Override Persona |
 | `clu --adapter <name> <projekt>` | Override Adapter (`claude-code`, `aider`, `cursor`, …) |

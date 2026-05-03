@@ -7,6 +7,7 @@
 #   clu <project>          → launch specific project (auto-resumes if last
 #                            session ended mid-flow, see --fresh to skip)
 #   clu --fresh <project>  → force a fresh session, skip auto-resume check
+#   clu fresh <project>    → alias for --fresh (subcommand form)
 #   clu resume <project>   → always continue last claude session (no memory inject)
 #   clu new <name>         → create new project
 #   clu list               → list all projects
@@ -84,6 +85,14 @@ while [[ $# -gt 0 ]]; do
         --fresh)
             FRESH_FORCE=true
             shift
+            ;;
+        fresh)
+            # Subcommand alias for --fresh flag: `clu fresh <project>`
+            # behaves exactly like `clu --fresh <project>`.
+            FRESH_FORCE=true
+            shift
+            PROJECT="${1:-}"
+            shift || true
             ;;
         new|list|summarize|resume|bootstrap|heartbeat|dashboard)
             COMMAND="$1"
