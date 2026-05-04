@@ -729,7 +729,12 @@ main() {
                     echo "   ↪ Last session was mid-flow — resuming verbatim."
                     echo "     (Use 'clu --fresh $PROJECT' to start a new session instead.)"
                     cd "$_repo_path"
-                    exec claude --continue
+                    # Suppress greeting/recap on resume — pattern adapted from
+                    # claw-code's compaction-continuation prompt. Without this
+                    # the agent often opens a resumed turn with "I was just
+                    # working on…" which wastes tokens and breaks immersion.
+                    local _resume_hint="SESSION RESUME: Do not greet, recap, or summarize prior context. Respond to the next user message as a direct continuation of the previous turn."
+                    exec claude --continue --append-system-prompt "$_resume_hint"
                 fi
                 echo "   ✓ Last session looked closed — starting fresh."
                 echo ""

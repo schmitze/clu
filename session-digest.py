@@ -125,25 +125,42 @@ def parse_session(path: Path) -> list[dict]:
     return entries, session_start
 
 
-def format_entry(entry: dict, fmt: str, max_chars: int) -> str:
+def _compress_text(text: str, max_chars: int, max_line_chars: int) -> str:
+    """Apply per-message and per-line caps. Pattern borrowed from
+    claw-code's runtime/src/summary_compression.rs — long single lines
+    (e.g. base64 blobs leaked into assistant text, multi-line log
+    output) explode digest layout otherwise."""
+    text = text[:max_chars]
+    if max_line_chars <= 0:
+        return text
+    out = []
+    for line in text.splitlines():
+        if len(line) > max_line_chars:
+            out.append(line[:max_line_chars] + " …")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+def format_entry(entry: dict, fmt: str, max_chars: int, max_line_chars: int) -> str:
     """Format a single digest entry."""
     role = entry["role"]
 
     if role == "user":
-        text = entry["text"][:max_chars]
+        text = _compress_text(entry["text"], max_chars, max_line_chars)
         if fmt == "md":
             return f"**User:** {text}"
         return f"USER: {text}"
 
     elif role == "assistant":
-        text = entry["text"][:max_chars]
+        text = _compress_text(entry["text"], max_chars, max_line_chars)
         if fmt == "md":
             return f"**Assistant:** {text}"
         return f"ASSISTANT: {text}"
 
     elif role == "tool":
         name = entry["name"]
-        detail = entry["detail"]
+        detail = entry["detail"][:max_line_chars] if max_line_chars > 0 else entry["detail"]
         if fmt == "md":
             return f"  `→ {name}`: {detail}"
         return f"  -> {name}: {detail}"
@@ -158,6 +175,7 @@ def format_digest(
     fmt: str,
     max_chars: int,
     max_total: int = 0,
+    max_line_chars: int = 0,
 ) -> str:
     """Format the full digest for one session, respecting max_total char budget."""
     lines = []
@@ -175,7 +193,7 @@ def format_digest(
 
     total = len(header) + 2
     for entry in entries:
-        formatted = format_entry(entry, fmt, max_chars)
+        formatted = format_entry(entry, fmt, max_chars, max_line_chars)
         if formatted:
             if max_total and total + len(formatted) + 1 > max_total:
                 break
@@ -213,6 +231,14 @@ def main():
         help="Max total output chars (default: 4000, 0=unlimited)",
     )
     parser.add_argument(
+        "--max-line-chars",
+        type=int,
+        default=200,
+        help="Max chars per line in entries (default: 200, 0=unlimited). "
+             "Long lines get truncated with ' …' marker — keeps digest "
+             "layout readable when tool output leaks into messages.",
+    )
+    parser.add_argument(
         "--list", action="store_true", help="Just list available sessions"
     )
 
@@ -233,7 +259,15 @@ def main():
     for i, session_file in enumerate(files):
         entries, session_start = parse_session(session_file)
         if entries:
-            digest = format_digest(session_file, entries, session_start, args.format, args.max_chars, args.max_total)
+            digest = format_digest(
+                session_file,
+                entries,
+                session_start,
+                args.format,
+                args.max_chars,
+                args.max_total,
+                args.max_line_chars,
+            )
             if args.max_total and total_output + len(digest) > args.max_total and total_output > 0:
                 break
             print(digest)
