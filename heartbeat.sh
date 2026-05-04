@@ -609,11 +609,12 @@ COMPACTEOF
 
         # See note at agent-audit call: pipefail + set -e would kill the
         # script on timeout 124 before we ever log it.
+        # 20 min cap — 10 min wasn't enough for 5 large files + Opus.
         compact_exit=0
-        echo "$COMPACT_PROMPT" | timeout 600 claude --dangerously-skip-permissions -p \
+        echo "$COMPACT_PROMPT" | timeout 1200 claude --dangerously-skip-permissions -p \
             >> "$AGENT_HOME/heartbeat-agent.log" 2>&1 || compact_exit=$?
         if [[ $compact_exit -eq 124 ]]; then
-            log "  ⚠ Memory compaction timed out after 10 min."
+            log "  ⚠ Memory compaction timed out after 20 min."
         fi
 
         if [[ $compact_exit -eq 0 ]]; then
@@ -647,37 +648,9 @@ else
     log "  ⚠ Dashboard not reachable on :3141, skipping auto-fix"
 fi
 
-# ── Task 9: Memory repo sync ────────────────────────────────
-
-MEMORY_REPO="$HOME/repos/clu-memory"
-if [[ -d "$MEMORY_REPO/.git" ]]; then
-    log "📤 Syncing memory repo..."
-    # Pull before commit to avoid non-fast-forward rejections
-    # (both machines may have committed on the same day)
-    if git -C "$MEMORY_REPO" pull --rebase --quiet 2>/dev/null; then
-        log "  ✅ Pulled latest from remote."
-    else
-        log "  ⚠ Pull/rebase failed — merge conflict or offline. Skipping push."
-        log "    Resolve manually: git -C $MEMORY_REPO rebase --abort"
-    fi
-
-    if git -C "$MEMORY_REPO" diff --quiet && git -C "$MEMORY_REPO" diff --cached --quiet && \
-       [[ -z "$(git -C "$MEMORY_REPO" ls-files --others --exclude-standard)" ]]; then
-        log "  ✅ No memory changes to sync."
-    else
-        git -C "$MEMORY_REPO" add -A
-        git -C "$MEMORY_REPO" commit -m "heartbeat" --quiet
-        if git -C "$MEMORY_REPO" push --quiet 2>/dev/null; then
-            log "  ✅ Memory synced to remote."
-        else
-            log "  ⚠ Memory committed locally, push failed (offline?)."
-        fi
-    fi
-else
-    log "  ⬜ Memory repo not found at $MEMORY_REPO, skipping sync."
-fi
-
-# ── Task 10: Recall index ────────────────────────────────────
+# ── Task 9: Recall index ─────────────────────────────────────
+# Reindex BEFORE curator runs so the curator can dedup against the
+# freshest index when classifying new sessions.
 
 RECALL_BIN="$HOME/repos/clu/tools/recall/recall.py"
 if [[ -x "$RECALL_BIN" ]]; then
@@ -693,7 +666,10 @@ else
     log "  ⬜ recall.py not found at $RECALL_BIN, skipping."
 fi
 
-# ── Task 11: Curator (autonomous memory writer) ──────────────
+# ── Task 10: Curator (autonomous memory writer) ──────────────
+# Runs BEFORE memory-repo sync so curator's writes get pushed in the
+# same heartbeat. Previously curator ran AFTER sync, leaving its
+# output unstaged until the next heartbeat.
 
 CURATOR_BIN="$HOME/repos/clu/tools/curator/curator.py"
 if [[ -x "$CURATOR_BIN" ]]; then
@@ -711,6 +687,50 @@ if [[ -x "$CURATOR_BIN" ]]; then
     fi
 else
     log "  ⬜ curator.py not found at $CURATOR_BIN, skipping."
+fi
+
+# ── Task 11: Memory repo sync ────────────────────────────────
+# Order matters: commit FIRST (clean working tree), then pull --rebase
+# (won't conflict with unstaged), then push. Previous order had pull
+# before commit — git refused with "cannot pull with rebase: You have
+# unstaged changes" whenever curator had written anything, and the
+# fallback branch then pushed anyway, contradicting the warning.
+
+MEMORY_REPO="$HOME/repos/clu-memory"
+if [[ -d "$MEMORY_REPO/.git" ]]; then
+    log "📤 Syncing memory repo..."
+
+    # Step 1: stage + commit local changes (if any) so the tree is clean
+    if git -C "$MEMORY_REPO" diff --quiet && git -C "$MEMORY_REPO" diff --cached --quiet && \
+       [[ -z "$(git -C "$MEMORY_REPO" ls-files --others --exclude-standard)" ]]; then
+        log "  ✅ No local memory changes."
+        had_local_changes=false
+    else
+        git -C "$MEMORY_REPO" add -A
+        git -C "$MEMORY_REPO" commit -m "heartbeat" --quiet
+        log "  ✅ Local memory changes committed."
+        had_local_changes=true
+    fi
+
+    # Step 2: pull --rebase against remote. Now that the tree is clean,
+    # this only fails on real merge conflicts or network errors.
+    if git -C "$MEMORY_REPO" pull --rebase --quiet 2>/dev/null; then
+        # Step 3: push (only reached on successful pull)
+        if git -C "$MEMORY_REPO" push --quiet 2>/dev/null; then
+            if [[ "$had_local_changes" == "true" ]]; then
+                log "  ✅ Memory synced to remote."
+            else
+                log "  ✅ Already in sync with remote."
+            fi
+        else
+            log "  ⚠ Push failed (offline?). Local commit kept."
+        fi
+    else
+        log "  ⚠ Pull/rebase failed — merge conflict or offline. Push skipped."
+        log "    Resolve manually: git -C $MEMORY_REPO rebase --abort && investigate"
+    fi
+else
+    log "  ⬜ Memory repo not found at $MEMORY_REPO, skipping sync."
 fi
 
 # ── Task 12: Memory health review (weekly, top model) ─────────
