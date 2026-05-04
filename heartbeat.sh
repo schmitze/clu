@@ -492,9 +492,13 @@ AGENT_PROMPT="${AGENT_PROMPT//CLU_HOME_PLACEHOLDER/$AGENT_HOME}"
 AGENT_PROMPT="${AGENT_PROMPT//REPORT_PATH_PLACEHOLDER/$SECURITY_REPORT}"
 
 if command -v claude &>/dev/null; then
+    # `set -euo pipefail` + raw pipeline = script suicide on timeout 124.
+    # `|| agent_exit=$?` consumes the pipeline failure so set -e doesn't
+    # fire and we actually reach the branches below. Same pattern at the
+    # compaction call (Task 7).
+    agent_exit=0
     echo "$AGENT_PROMPT" | timeout 600 claude --dangerously-skip-permissions -p \
-        > "$AGENT_HOME/heartbeat-agent.log" 2>&1
-    agent_exit=$?
+        > "$AGENT_HOME/heartbeat-agent.log" 2>&1 || agent_exit=$?
     if [[ $agent_exit -eq 124 ]]; then
         log "  ⚠ Agent audit timed out after 10 min."
     fi
@@ -603,9 +607,11 @@ COMPACTEOF
         COMPACT_PROMPT="${COMPACT_PROMPT//MEMORY_FILES_PLACEHOLDER/$MEMORY_FILES}"
         COMPACT_PROMPT="${COMPACT_PROMPT//LARGE_FILES_PLACEHOLDER/$LARGE_FILES}"
 
+        # See note at agent-audit call: pipefail + set -e would kill the
+        # script on timeout 124 before we ever log it.
+        compact_exit=0
         echo "$COMPACT_PROMPT" | timeout 600 claude --dangerously-skip-permissions -p \
-            >> "$AGENT_HOME/heartbeat-agent.log" 2>&1
-        compact_exit=$?
+            >> "$AGENT_HOME/heartbeat-agent.log" 2>&1 || compact_exit=$?
         if [[ $compact_exit -eq 124 ]]; then
             log "  ⚠ Memory compaction timed out after 10 min."
         fi
