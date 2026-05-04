@@ -743,7 +743,7 @@ main() {
     local curator_bin="$AGENT_HOME/tools/curator/curator.py"
     if [[ -x "$curator_bin" ]]; then
         echo "🤖 Pre-session memory consolidation..."
-        if curator_out=$(timeout 60 "$curator_bin" run --limit 5 2>&1); then
+        if curator_out=$(timeout 180 "$curator_bin" run --limit 5 2>&1); then
             local n_logs n_blocks
             n_logs=$(echo "$curator_out" | grep -c "wrote daily log" 2>/dev/null || echo 0)
             n_blocks=$(echo "$curator_out" | grep -cE "^  📝 " 2>/dev/null || echo 0)
@@ -806,4 +806,11 @@ main() {
     adapter_launch
 }
 
-main
+# Single-line invocation: `main "$@"; exit $?` on one line forces bash
+# to buffer both commands together. Prevents a top-level re-read after
+# `main` returns — relevant if the launcher file gets rewritten
+# (e.g. via `git pull` or install.sh) while a long-running session is
+# still inside `claude`. Without this, bash continues reading from the
+# old byte offset into the new file and may stumble onto a `local`
+# token at top level → "line N: local: can only be used in a function".
+main "$@"; exit $?
